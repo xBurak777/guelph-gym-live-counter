@@ -210,13 +210,6 @@ export default function MembershipPage() {
         </div>
       </Section>
 
-      <Section className="pt-0">
-        <Callout title="Not affiliated with the University — for now.">
-          This is a demo site showcasing a Live Gym Counter concept, built with the University of
-          Guelph Gryphons visual identity for context. If you'd like to see this deployed as an
-          official U of G tool, get in touch.
-        </Callout>
-      </Section>
     </PageShell>
   );
 }
