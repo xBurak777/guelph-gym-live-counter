@@ -1,178 +1,311 @@
+import Image from "next/image";
 import Link from "next/link";
-import NavBar from "@/components/NavBar";
+import PageShell from "@/components/PageShell";
 import LiveCounter from "@/components/LiveCounter";
-import { brand } from "@/lib/brand";
-import {
-  getCurrentOccupancy,
-  getAverageVisitMinutes,
-  getCrowdLevel,
-  GYM_CAPACITY,
-} from "@/lib/occupancy";
+import { InfoCard, Section, SectionHeader, CTAButton, StatGrid } from "@/components/ui";
+import { computeOccupancy } from "@/lib/occupancy";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
-  const [occupancy, avgVisitMinutes] = await Promise.all([
-    getCurrentOccupancy(),
-    getAverageVisitMinutes(),
-  ]);
-  const crowd = getCrowdLevel(occupancy, GYM_CAPACITY);
-  const percentFull = Math.round((occupancy / GYM_CAPACITY) * 100);
+async function getInitial() {
+  try {
+    return await computeOccupancy();
+  } catch {
+    return {
+      occupancy: 0,
+      capacity: 450,
+      percentFull: 0,
+      avgVisitMinutes: 68,
+      crowd: {
+        level: "quiet" as const,
+        label: "Quiet",
+        message: "Perfect time to train.",
+        color: "#22c55e",
+        face: "😌",
+      },
+      updatedAt: new Date().toISOString(),
+    };
+  }
+}
+
+const programHighlights = [
+  {
+    title: "Personal Training",
+    description:
+      "1:1 coaching with 8 certified trainers including Master Trainer Lynne Skilton-Hayes. Sessions, packages, and small-group PT.",
+    href: "/fitness/personal-training",
+    image: "/images/facilities/fitness-centre-hires.jpg",
+    tag: "Fitness",
+  },
+  {
+    title: "NRG Group Classes",
+    description:
+      "40+ weekly classes: Yoga, Pilates, HIIT, Cycle, Zumba, Barre, Strength, and Mind & Body. Included with NRG Plus.",
+    href: "/nrg",
+    image: "/images/facilities/fitness-classes.jpg",
+    tag: "Group Fitness",
+  },
+  {
+    title: "Aquatics Programs",
+    description:
+      "Two pools — the 25m Gold Pool and 25yd Red Pool with diving board — plus Lifesaving Society swim lessons for all ages.",
+    href: "/skills/aquatics",
+    image: "/images/facilities/aquatics.jpg",
+    tag: "Aquatics",
+  },
+  {
+    title: "Rock Climbing",
+    description:
+      "Indoor bouldering, top-rope, and auto-belays at the GGAC Climbing Wall. Free equipment, orientation-required.",
+    href: "/sports/climbing",
+    image: "/images/facilities/rock-climbing.jpg",
+    tag: "Sport",
+  },
+  {
+    title: "Intramurals & Clubs",
+    description:
+      "14 intramural sports across three levels of play. Free-agent registration or team bond entry — Ice Hockey through Squash.",
+    href: "/sports/intramurals",
+    image: "/images/facilities/wf-mitchell-1.jpg",
+    tag: "Sport",
+  },
+  {
+    title: "Kids Camps & Swim",
+    description:
+      "SUN AWARE-certified summer camps ages 5-14, Junior Activity Camp with 1:6 ratio, and Learn-to-Swim lessons for babies through teens.",
+    href: "/kids/camps",
+    image: "/images/facilities/kids-camps-1.jpg",
+    tag: "Kids",
+  },
+];
+
+export default async function HomePage() {
+  const initial = await getInitial();
 
   return (
-    <>
-      <NavBar />
+    <PageShell>
+      {/* HERO */}
+      <section className="relative isolate overflow-hidden bg-gryphon-black text-white">
+        <div className="absolute inset-0 -z-10">
+          <Image
+            src="/images/heroes/home-banner-1.jpg"
+            alt="Gryphon athletes training at the W.F. Mitchell Athletics Centre"
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover opacity-50"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-gryphon-black/60 via-gryphon-black/70 to-gryphon-black" />
+        </div>
 
-      {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-gryphon-red via-gryphon-red-dark to-gryphon-black -z-10" />
-        <div className="absolute inset-0 opacity-[0.08] bg-[radial-gradient(circle_at_20%_20%,#FFC72C_0%,transparent_50%)] -z-10" />
-
-        <div className="mx-auto max-w-7xl px-6 py-16 md:py-24 grid gap-12 md:grid-cols-2 items-center">
-          <div className="text-white">
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-widest">
-              <span className="h-1.5 w-1.5 rounded-full bg-gryphon-gold" />
-              {brand.taglines.department}
+        <div className="mx-auto max-w-7xl px-6 py-20 md:py-24 lg:py-28">
+          <div className="grid gap-12 lg:grid-cols-[1.15fr_0.85fr] lg:gap-16 items-center">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-1.5 text-xs font-semibold tracking-widest uppercase text-gryphon-gold backdrop-blur">
+                <span className="h-1.5 w-1.5 rounded-full bg-gryphon-gold animate-pulse" />
+                Now live · Gym occupancy
+              </div>
+              <h1 className="mt-6 text-4xl md:text-5xl lg:text-6xl font-black leading-[1.05] tracking-tight">
+                Nurture. Recreate.
+                <br />
+                <span className="text-gryphon-gold">Gear up.</span>
+              </h1>
+              <p className="mt-6 max-w-xl text-base md:text-lg text-slate-200 leading-relaxed">
+                Fitness, recreation, and community programs for U of G students, staff, and Guelph
+                residents — all at the W.F. Mitchell Athletics Centre. Now with a live gym counter
+                so you never wait for a bench again.
+              </p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <CTAButton href="/membership" variant="primary" className="!bg-gryphon-red">
+                  Join Now
+                </CTAButton>
+                <CTAButton
+                  href="/nrg"
+                  variant="ghost"
+                  className="!border-white/40 !text-white hover:!bg-white/10 hover:!border-white"
+                >
+                  Browse NRG Classes
+                </CTAButton>
+              </div>
+              <div className="mt-10 grid grid-cols-3 gap-6 max-w-lg">
+                <div>
+                  <div className="text-2xl md:text-3xl font-black text-white">450</div>
+                  <div className="text-xs text-slate-400 mt-1">Fitness Centre capacity</div>
+                </div>
+                <div>
+                  <div className="text-2xl md:text-3xl font-black text-white">40+</div>
+                  <div className="text-xs text-slate-400 mt-1">Weekly NRG classes</div>
+                </div>
+                <div>
+                  <div className="text-2xl md:text-3xl font-black text-white">14</div>
+                  <div className="text-xs text-slate-400 mt-1">Intramural sports</div>
+                </div>
+              </div>
             </div>
-            <h1 className="mt-5 text-4xl md:text-6xl font-black tracking-tight leading-[1.05]">
-              Know before <br />
-              you go.
-            </h1>
-            <p className="mt-5 text-lg text-white/80 max-w-lg">
-              Real-time gym occupancy at the W.F. Mitchell Athletics Centre.
-              Never wait for a bench again — check the counter, then head over.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link
-                href="/membership"
-                className="inline-flex items-center rounded-full bg-gryphon-gold text-black px-5 py-2.5 font-semibold hover:bg-yellow-300 transition"
-              >
-                Get an NRG membership
-              </Link>
-              <Link
-                href="/hours"
-                className="inline-flex items-center rounded-full bg-white/10 text-white border border-white/25 px-5 py-2.5 font-semibold hover:bg-white/15 transition"
-              >
-                See gym hours
-              </Link>
+
+            <div className="relative">
+              <LiveCounter initial={initial} />
+              <div className="absolute -top-3 -right-3 hidden md:block rounded-full bg-gryphon-gold px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-black shadow-lg">
+                World-first for U of G
+              </div>
             </div>
           </div>
+        </div>
+      </section>
 
-          <div>
-            <LiveCounter
-              initial={{
-                occupancy,
-                capacity: GYM_CAPACITY,
-                percentFull,
-                avgVisitMinutes,
-                crowd,
-                updatedAt: new Date().toISOString(),
-              }}
+      {/* WHAT'S HERE / PROGRAMS */}
+      <Section>
+        <div className="flex flex-wrap items-end justify-between gap-6 mb-10">
+          <SectionHeader
+            eyebrow="What's here"
+            title="Everything for every kind of athlete."
+            subtitle="From your first personal-training session to varsity-level intramurals, from parent-and-tot swim to certification courses — Gryphon Fit & Rec is a full-service athletics department serving the University of Guelph campus and Guelph community."
+          />
+          <CTAButton href="/about" variant="ghost">About the Department</CTAButton>
+        </div>
+
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {programHighlights.map((p) => (
+            <Link
+              key={p.title}
+              href={p.href}
+              className="group overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all hover:border-gryphon-red hover:shadow-xl"
+            >
+              <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
+                <Image
+                  src={p.image}
+                  alt={p.title}
+                  fill
+                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                  className="object-cover transition-transform duration-700 group-hover:scale-105"
+                />
+                <div className="absolute top-4 left-4 rounded-full bg-white/95 backdrop-blur px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-gryphon-red">
+                  {p.tag}
+                </div>
+              </div>
+              <div className="p-6">
+                <h3 className="text-lg font-bold text-slate-900">{p.title}</h3>
+                <p className="mt-2 text-sm text-slate-600 leading-relaxed">{p.description}</p>
+                <div className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-gryphon-red">
+                  Explore <span aria-hidden className="transition-transform group-hover:translate-x-0.5">→</span>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </Section>
+
+      {/* MEMBERSHIP PROMO */}
+      <section className="bg-slate-50 border-y border-slate-200">
+        <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
+          <div className="grid gap-10 lg:grid-cols-2 lg:gap-16 items-center">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-widest text-gryphon-red">
+                Membership
+              </div>
+              <h2 className="mt-3 text-3xl md:text-4xl font-black tracking-tight text-slate-900">
+                One card. Every program.
+              </h2>
+              <p className="mt-4 text-slate-600 leading-relaxed max-w-lg">
+                U of G students, staff, retirees, alumni, and Guelph community members all
+                have a tier. Fitness Centre, drop-in rec, walking/jogging track, NRG classes,
+                aquatics — every membership includes the essentials.
+              </p>
+
+              <div className="mt-8 grid grid-cols-2 gap-4">
+                <div className="rounded-xl border border-slate-200 bg-white p-5">
+                  <div className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                    Student NRG Plus
+                  </div>
+                  <div className="mt-2 text-3xl font-black text-gryphon-red">$55<span className="text-base font-semibold text-slate-500">/sem</span></div>
+                  <div className="text-xs text-slate-500 mt-2">Includes NRG classes + climbing.</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white p-5">
+                  <div className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                    Community NRG
+                  </div>
+                  <div className="mt-2 text-3xl font-black text-gryphon-red">$71<span className="text-base font-semibold text-slate-500">.90/mo</span></div>
+                  <div className="text-xs text-slate-500 mt-2">Adults 18+ Guelph residents.</div>
+                </div>
+              </div>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <CTAButton href="/membership">See All Plans</CTAButton>
+                <CTAButton href="/membership/register" variant="ghost">How to Register</CTAButton>
+              </div>
+            </div>
+
+            <div className="relative aspect-[4/3] rounded-2xl overflow-hidden border border-slate-200 shadow-xl">
+              <Image
+                src="/images/facilities/fitness-centre-hires.jpg"
+                alt="W.F. Mitchell Fitness Centre"
+                fill
+                sizes="(max-width: 1024px) 100vw, 50vw"
+                className="object-cover"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FACILITY / LOCATION */}
+      <Section>
+        <div className="grid gap-10 lg:grid-cols-2 lg:gap-16 items-center">
+          <div className="relative aspect-[4/3] rounded-2xl overflow-hidden border border-slate-200 order-2 lg:order-1">
+            <Image
+              src="/images/facilities/wf-mitchell-exterior.jpg"
+              alt="W.F. Mitchell Athletics Centre exterior"
+              fill
+              sizes="(max-width: 1024px) 100vw, 50vw"
+              className="object-cover"
             />
           </div>
-        </div>
-      </section>
-
-      {/* Feature strip */}
-      <section className="mx-auto max-w-7xl px-6 py-16 md:py-24">
-        <div className="grid gap-8 md:grid-cols-3">
-          <Feature
-            title="Real-time counts"
-            body="Every card tap updates the counter in under a second. No more guessing based on Google Maps popular times."
-            icon="⚡"
-          />
-          <Feature
-            title="Plan around the crowd"
-            body="See how full the gym is right now and the rolling average visit length — arrive when it's actually quiet."
-            icon="📊"
-          />
-          <Feature
-            title="Front-desk visibility"
-            body="Staff instantly see who scanned in, their photo, and membership tier — no more card-swap confusion."
-            icon="🪪"
-          />
-        </div>
-      </section>
-
-      {/* Program cards mirroring real Guelph IA */}
-      <section className="bg-slate-50 border-y border-slate-200">
-        <div className="mx-auto max-w-7xl px-6 py-16 md:py-24">
-          <div className="max-w-2xl">
-            <h2 className="text-3xl md:text-4xl font-black tracking-tight">
-              Everything happening at Fit & Rec
-            </h2>
-            <p className="mt-3 text-slate-600">
-              From personal training to intramurals and kids&apos; camps —
-              programs for every Gryphon.
-            </p>
-          </div>
-
-          <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-            <ProgramCard title="Fitness / Wellness" desc="Personal training, group classes, wellness programs." href="/fitness/personal-training" />
-            <ProgramCard title="Skill Development" desc="Aquatics, dance, and instructor certifications." href="/skills/aquatics" />
-            <ProgramCard title="Membership" desc="NRG plans, day passes, and PT packages." href="/membership" />
-            <ProgramCard title="Sports & Clubs" desc="Drop-in rec, intramurals, sport clubs, climbing." href="/sports/drop-in" />
-            <ProgramCard title="Kids & Camps" desc="Swim lessons and sport & activity camps." href="/kids/camps" />
-            <ProgramCard title="Hours & Contact" desc="Facility hours, addresses, and staff contacts." href="/hours" />
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="bg-gryphon-black text-white/80">
-        <div className="mx-auto max-w-7xl px-6 py-12 grid gap-8 md:grid-cols-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="h-9 w-9 rounded-full bg-gryphon-red flex items-center justify-center">
-                <span className="text-gryphon-gold font-black">G</span>
-              </div>
-              <div className="font-black">Guelph Gryphons Fit & Rec</div>
+          <div className="order-1 lg:order-2">
+            <div className="text-xs font-bold uppercase tracking-widest text-gryphon-red">
+              Home base
             </div>
-            <p className="mt-4 text-sm text-white/60">{brand.taglines.department}</p>
-          </div>
-          <div>
-            <div className="text-xs uppercase tracking-widest text-white/50">Athletics Centre</div>
-            <div className="mt-2 text-sm">{brand.facilities.mitchell.address}</div>
-          </div>
-          <div>
-            <div className="text-xs uppercase tracking-widest text-white/50">Arena</div>
-            <div className="mt-2 text-sm">{brand.facilities.gryphonCentre.address}</div>
-          </div>
-          <div>
-            <div className="text-xs uppercase tracking-widest text-white/50">Contact</div>
-            <div className="mt-2 text-sm">{brand.contact.phone}</div>
-            <div className="text-sm">{brand.contact.generalEmail}</div>
-          </div>
-        </div>
-        <div className="border-t border-white/10">
-          <div className="mx-auto max-w-7xl px-6 py-4 text-xs text-white/50 flex flex-wrap justify-between gap-3">
-            <span>© {new Date().getFullYear()} Portfolio project by Burak Aksoy · Not affiliated with the University of Guelph.</span>
-            <span>Built with Next.js · TypeScript · Prisma · Neon Postgres</span>
+            <h2 className="mt-3 text-3xl md:text-4xl font-black tracking-tight text-slate-900">
+              W.F. Mitchell Athletics Centre
+            </h2>
+            <p className="mt-4 text-slate-600 leading-relaxed">
+              Newly renovated in 2016 after 12 years of planning. The Mitchell houses a 450-person
+              Fitness Centre, two pools, three gymnasiums, an indoor rock-climbing wall, a
+              walking/jogging track, and dedicated studios for NRG and Group PT classes.
+            </p>
+            <div className="mt-6 space-y-2 text-sm text-slate-700">
+              <div><span className="font-semibold">Address:</span> 50 East Ring Road, Guelph, ON N1G 2W1</div>
+              <div><span className="font-semibold">Client Services:</span> 519-824-4120 ext. 56253</div>
+              <div><span className="font-semibold">Fitness Centre:</span> ext. 52105 · <span className="font-semibold">Field House:</span> ext. 52045</div>
+            </div>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <CTAButton href="/hours">Hours of Operation</CTAButton>
+              <CTAButton href="/contact" variant="ghost">Contact Us</CTAButton>
+            </div>
           </div>
         </div>
-      </footer>
-    </>
-  );
-}
+      </Section>
 
-function Feature({ title, body, icon }: { title: string; body: string; icon: string }) {
-  return (
-    <div className="p-6 rounded-2xl border border-slate-200 bg-white">
-      <div className="text-3xl">{icon}</div>
-      <div className="mt-3 font-black text-lg">{title}</div>
-      <p className="mt-1 text-sm text-slate-600 leading-relaxed">{body}</p>
-    </div>
-  );
-}
-
-function ProgramCard({ title, desc, href }: { title: string; desc: string; href: string }) {
-  return (
-    <Link href={href} className="group block rounded-2xl border border-slate-200 bg-white p-6 hover:border-gryphon-red hover:shadow-md transition-all">
-      <div className="text-lg font-black tracking-tight">{title}</div>
-      <p className="mt-1 text-sm text-slate-600">{desc}</p>
-      <div className="mt-4 text-sm font-semibold text-gryphon-red inline-flex items-center gap-1">
-        Explore <span aria-hidden className="group-hover:translate-x-0.5 transition">→</span>
-      </div>
-    </Link>
+      {/* BOTTOM CTA */}
+      <section className="bg-gryphon-black text-white">
+        <div className="mx-auto max-w-7xl px-6 py-16 md:py-20 text-center">
+          <h2 className="text-3xl md:text-4xl font-black tracking-tight max-w-2xl mx-auto">
+            Never wait for a bench again.
+          </h2>
+          <p className="mt-4 text-slate-300 max-w-xl mx-auto">
+            Check the live counter above before you head over, or browse everything the Mitchell has
+            to offer.
+          </p>
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+            <CTAButton href="/membership" className="!bg-gryphon-red">Get a Membership</CTAButton>
+            <CTAButton
+              href="/nrg"
+              variant="ghost"
+              className="!border-white/40 !text-white hover:!bg-white/10"
+            >
+              View NRG Schedule
+            </CTAButton>
+          </div>
+        </div>
+      </section>
+    </PageShell>
   );
 }

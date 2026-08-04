@@ -41,81 +41,96 @@ export default function LiveCounter({ initial }: { initial: Occupancy }) {
   }, [data.occupancy]);
 
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white shadow-xl overflow-hidden">
-      <div className="grid grid-cols-1 md:grid-cols-5">
-        {/* Big number */}
-        <div className="md:col-span-2 p-8 md:p-10 bg-gradient-to-br from-gryphon-black to-slate-800 text-white">
-          <div className="flex items-center gap-2 text-xs uppercase tracking-widest opacity-80">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gryphon-gold opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-gryphon-gold" />
-            </span>
-            Live · updated every 5 s
-          </div>
-
-          <div className={`mt-3 flex items-baseline gap-3 ${pulse ? "animate-counter-pop" : ""}`}>
-            <span className="text-7xl md:text-8xl font-black tracking-tight tabular-nums">
-              {data.occupancy}
-            </span>
-            <span className="text-lg text-slate-300">/ {data.capacity}</span>
-          </div>
-          <div className="mt-1 text-sm text-slate-300">people in the gym right now</div>
-
-          <div className="mt-6">
-            <div className="h-2 w-full rounded-full bg-slate-700 overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-700"
-                style={{ width: `${Math.min(100, data.percentFull)}%`, backgroundColor: data.crowd.color }}
-              />
-            </div>
-            <div className="mt-1.5 flex justify-between text-[11px] uppercase tracking-widest text-slate-400">
-              <span>Quiet</span><span>Moderate</span><span>Busy</span><span>Packed</span>
-            </div>
-          </div>
+    <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-gryphon-black via-slate-900 to-slate-800 text-white shadow-2xl overflow-hidden">
+      {/* Live badge */}
+      <div className="px-7 pt-6 pb-2 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-[11px] uppercase tracking-widest text-white/70 font-semibold">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gryphon-gold opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-gryphon-gold" />
+          </span>
+          Live · updated every 5s
         </div>
+        <div className="text-[11px] uppercase tracking-widest text-white/50 font-semibold">
+          W.F. Mitchell Athletics Centre
+        </div>
+      </div>
 
-        {/* Status face + advice */}
-        <div className="md:col-span-3 p-8 md:p-10 flex flex-col justify-center">
-          <div className="flex items-center gap-4">
-            <div
-              className="text-6xl leading-none"
-              style={{ color: data.crowd.color }}
-              aria-hidden
-            >
-              {data.crowd.face}
-            </div>
-            <div>
-              <div className="text-2xl font-black" style={{ color: data.crowd.color }}>
-                {data.crowd.label}
-              </div>
-              <div className="text-slate-600 mt-0.5">{data.crowd.message}</div>
-            </div>
+      {/* Big count */}
+      <div className="px-7 pt-3 pb-5">
+        <div className={`flex items-baseline gap-3 ${pulse ? "animate-counter-pop" : ""}`}>
+          <span className="text-6xl md:text-7xl font-black tracking-tight tabular-nums leading-none">
+            {data.occupancy}
+          </span>
+          <span className="text-xl md:text-2xl text-white/50 tabular-nums font-semibold">
+            /&nbsp;{data.capacity}
+          </span>
+        </div>
+        <div className="mt-1.5 text-sm text-white/60">people in the gym right now</div>
+      </div>
+
+      {/* Status row: face + label */}
+      <div className="px-7 py-5 border-t border-white/10 flex items-center gap-4">
+        <div
+          className="text-5xl leading-none shrink-0"
+          style={{ color: data.crowd.color }}
+          aria-hidden
+        >
+          {data.crowd.face}
+        </div>
+        <div className="min-w-0">
+          <div
+            className="text-xl md:text-2xl font-black tracking-tight"
+            style={{ color: data.crowd.color }}
+          >
+            {data.crowd.label}
           </div>
+          <div className="text-sm text-white/70 mt-0.5">{data.crowd.message}</div>
+        </div>
+      </div>
 
-          <div className="mt-6 grid grid-cols-2 gap-4">
-            <MetricCard
-              label="Avg. visit today"
-              value={`${data.avgVisitMinutes} min`}
-              hint="Rolling 14-day"
-            />
-            <MetricCard
-              label="Capacity used"
-              value={`${data.percentFull}%`}
-              hint={`${data.capacity - data.occupancy} spots free`}
-            />
+      {/* Capacity bar with proper 4-column labels */}
+      <div className="px-7 py-5 border-t border-white/10">
+        <div className="h-2.5 w-full rounded-full bg-white/10 overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-700"
+            style={{ width: `${Math.min(100, data.percentFull)}%`, backgroundColor: data.crowd.color }}
+          />
+        </div>
+        <div
+          className="mt-2 text-[10px] uppercase tracking-widest text-white/50 font-semibold"
+          style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)" }}
+        >
+          <span className="text-left">Quiet</span>
+          <span className="text-center">Moderate</span>
+          <span className="text-center">Busy</span>
+          <span className="text-right">Packed</span>
+        </div>
+      </div>
+
+      {/* Metric grid */}
+      <div className="px-7 py-5 border-t border-white/10 grid grid-cols-2 gap-3">
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-white/50 font-semibold">
+            Avg. visit today
+          </div>
+          <div className="mt-1 text-xl md:text-2xl font-black tracking-tight text-white">
+            {data.avgVisitMinutes} min
+          </div>
+          <div className="text-[11px] text-white/50 mt-0.5">Rolling 14-day</div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-white/50 font-semibold">
+            Capacity used
+          </div>
+          <div className="mt-1 text-xl md:text-2xl font-black tracking-tight text-white">
+            {data.percentFull}%
+          </div>
+          <div className="text-[11px] text-white/50 mt-0.5">
+            {data.capacity - data.occupancy} spots free
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function MetricCard({ label, value, hint }: { label: string; value: string; hint: string }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <div className="text-[11px] uppercase tracking-widest text-slate-500 font-semibold">{label}</div>
-      <div className="mt-1 text-2xl font-black tracking-tight">{value}</div>
-      <div className="text-xs text-slate-500 mt-0.5">{hint}</div>
     </div>
   );
 }

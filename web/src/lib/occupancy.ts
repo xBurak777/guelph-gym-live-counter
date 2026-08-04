@@ -81,3 +81,25 @@ export function getCrowdLevel(occupancy: number, capacity: number): {
 }
 
 export const GYM_CAPACITY = Number(process.env.GYM_MAX_CAPACITY ?? 450);
+
+/**
+ * Compose the full live-counter payload used by the homepage server component
+ * and the /api/occupancy endpoint.
+ */
+export async function computeOccupancy() {
+  const [occupancy, avgVisitMinutes] = await Promise.all([
+    getCurrentOccupancy(),
+    getAverageVisitMinutes(),
+  ]);
+  const capacity = GYM_CAPACITY;
+  const percentFull = Math.round((occupancy / capacity) * 100);
+  const crowd = getCrowdLevel(occupancy, capacity);
+  return {
+    occupancy,
+    capacity,
+    percentFull,
+    avgVisitMinutes,
+    crowd,
+    updatedAt: new Date().toISOString(),
+  };
+}
