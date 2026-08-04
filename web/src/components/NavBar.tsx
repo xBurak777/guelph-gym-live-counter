@@ -41,10 +41,10 @@ export default function NavBar() {
           <Image
             src="/images/logos/fitandrec-logo.png"
             alt="Guelph Gryphons Fit & Rec"
-            width={44}
-            height={44}
+            width={72}
+            height={72}
             priority
-            className="h-10 w-10 object-contain"
+            className="h-12 w-12 xl:h-14 xl:w-14 object-contain"
           />
           <div className="leading-tight hidden sm:block lg:hidden min-[1600px]:block">
             <div className="text-sm font-black tracking-tight text-slate-900 group-hover:text-gryphon-red transition-colors whitespace-nowrap">
