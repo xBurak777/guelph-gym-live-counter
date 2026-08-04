@@ -286,6 +286,48 @@ export default async function HomePage() {
         </div>
       </Section>
 
+      {/* VIDEO TOUR */}
+      <section className="bg-slate-50 border-y border-slate-200">
+        <div className="mx-auto max-w-7xl px-6 py-16 md:py-20">
+          <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16 items-center">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-widest text-gryphon-red">
+                Video tour
+              </div>
+              <h2 className="mt-3 text-3xl md:text-4xl font-black tracking-tight text-slate-900">
+                Tour the Guelph Gryphons Athletics Centre.
+              </h2>
+              <p className="mt-4 text-slate-600 leading-relaxed">
+                Take a walk-through of the GGAC — the 22,000 sq ft fitness centre, walking track,
+                rock climbing wall, 2,200-seat event centre with three gymnasiums, three
+                change-rooms, and Aquatics Centre. Built in 2016 and open to every member on your
+                first day.
+              </p>
+              <div className="mt-6 space-y-2 text-sm text-slate-700">
+                <div>· 22,000 sq ft Fitness Centre</div>
+                <div>· Two pools — Gold (25m) &amp; Red (25yd)</div>
+                <div>· Indoor rock climbing wall &amp; walking/jogging track</div>
+                <div>· 2,200-seat event centre with three gyms</div>
+              </div>
+              <div className="mt-6">
+                <CTAButton href="/facilities" variant="ghost">Explore Facilities</CTAButton>
+              </div>
+            </div>
+            <div className="relative aspect-video rounded-2xl overflow-hidden border border-slate-200 shadow-xl bg-black">
+              <iframe
+                src="https://www.youtube-nocookie.com/embed/hYuYRp1liWk?rel=0&modestbranding=1"
+                title="Tour the Guelph Gryphons Athletics Centre (GGAC)"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                loading="lazy"
+                referrerPolicy="strict-origin-when-cross-origin"
+                className="absolute inset-0 h-full w-full"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* VALUED MEMBERS AND STAFF (real people from fitandrec.gryphons.ca) */}
       <ValuedMembersSlider members={FEATURED_STAFF} />
 

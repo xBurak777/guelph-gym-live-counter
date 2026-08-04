@@ -36,7 +36,7 @@ export default function NavBar() {
       </div>
 
       {/* main nav */}
-      <nav className="mx-auto max-w-7xl px-6 py-4 flex items-center gap-8">
+      <nav className="mx-auto max-w-7xl px-6 py-4 flex items-center gap-4 xl:gap-6">
         <Link href="/" className="flex items-center gap-3 shrink-0 group">
           <Image
             src="/images/logos/fitandrec-logo.png"
@@ -46,20 +46,20 @@ export default function NavBar() {
             priority
             className="h-10 w-10 object-contain"
           />
-          <div className="leading-tight hidden sm:block">
-            <div className="font-black tracking-tight text-slate-900 group-hover:text-gryphon-red transition-colors">
+          <div className="leading-tight hidden sm:block lg:hidden xl:block">
+            <div className="font-black tracking-tight text-slate-900 group-hover:text-gryphon-red transition-colors whitespace-nowrap">
               GRYPHON FIT & REC
             </div>
-            <div className="text-[10px] font-bold tracking-widest text-gryphon-red">
+            <div className="text-[10px] font-bold tracking-widest text-gryphon-red whitespace-nowrap">
               UNIVERSITY OF GUELPH
             </div>
           </div>
         </Link>
 
-        <ul className="hidden lg:flex items-center gap-5 text-sm font-semibold text-slate-800">
+        <ul className="hidden lg:flex items-center gap-3 xl:gap-5 text-sm font-semibold text-slate-800">
           {brand.nav.map((item) => (
             <li key={item.label} className="group relative">
-              <button className="flex items-center gap-1 py-2 hover:text-gryphon-red transition-colors">
+              <button className="flex items-center gap-1 py-2 hover:text-gryphon-red transition-colors whitespace-nowrap">
                 {item.label}
                 <svg className="h-3 w-3 opacity-60" viewBox="0 0 20 20" fill="currentColor">
                   <path
@@ -88,13 +88,13 @@ export default function NavBar() {
 
         <div className="ml-auto flex items-center gap-3">
           {/* Desktop search — visible md+ */}
-          <div className="hidden md:block w-56 lg:w-64">
+          <div className="hidden md:block w-44 lg:w-40 xl:w-56">
             <SearchBox variant="nav" placeholder="Search programs, staff…" />
           </div>
 
           <Link
             href="/membership"
-            className="hidden md:inline-flex items-center rounded-full bg-gryphon-red px-4 py-2 text-sm font-semibold text-white hover:bg-gryphon-red-dark transition-colors"
+            className="hidden md:inline-flex items-center whitespace-nowrap rounded-full bg-gryphon-red px-4 py-2 text-sm font-semibold text-white hover:bg-gryphon-red-dark transition-colors"
           >
             Join Now
           </Link>
