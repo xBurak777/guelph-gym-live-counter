@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+web/.next/
+web/out/
+web/build/
+web/dist/
+
+# Environment
+.env
+.env.local
+.env*.local
+!.env.example
+
+# Prisma
+web/prisma/*.db
+web/prisma/*.db-journal
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# OS
+Thumbs.db
+
+# Firmware build artifacts
+firmware/**/build/
+firmware/**/.pio/
+firmware/**/.pioenvs/
+firmware/**/.piolibdeps/
+
+# Hardware CAD backups
+hardware/**/*.bak

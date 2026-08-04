@@ -1,0 +1,92 @@
+// Guelph Gym Live Counter — Prisma schema
+// Postgres (Neon) via prisma-client-js.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// A gym member (student, alumnus, community, etc.).
+// The `cardUid` is the raw NFC UID read by the PN532.
+model Member {
+  id              String       @id @default(cuid())
+  cardUid         String       @unique
+  firstName       String
+  lastName        String
+  email           String?      @unique
+  photoUrl        String?
+  membershipTier  String       // "STUDENT_FALL", "STUDENT_ANNUAL", "ALUMNI", "COMMUNITY", "STAFF"
+  membershipStart DateTime     @default(now())
+  membershipEnd   DateTime
+  isActive        Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  scanEvents      ScanEvent[]
+  gymSessions    GymSession[]
+
+  @@index([cardUid])
+  @@index([isActive, membershipEnd])
+}
+
+// Every physical card tap at a gate.
+// One tap = one ScanEvent. Success or failure both stored.
+enum ScanDirection {
+  IN
+  OUT
+}
+
+enum ScanResult {
+  SUCCESS
+  DENIED_EXPIRED
+  DENIED_UNKNOWN_CARD
+  DENIED_INACTIVE
+  DENIED_ALREADY_INSIDE
+  DENIED_NOT_INSIDE
+}
+
+model ScanEvent {
+  id         String         @id @default(cuid())
+  memberId   String?
+  member     Member?        @relation(fields: [memberId], references: [id])
+  cardUid    String         // Copy of UID even if member not found
+  direction  ScanDirection
+  result     ScanResult
+  gateId     String         @default("gate-1") // Which turnstile scanned
+  scannedAt  DateTime       @default(now())
+
+  @@index([scannedAt])
+  @@index([memberId, scannedAt])
+  @@index([cardUid, scannedAt])
+}
+
+// A completed visit: entry + exit pair.
+// Created on successful scan-out. Used for average-time-in-gym calculation.
+model GymSession {
+  id             String    @id @default(cuid())
+  memberId       String
+  member         Member    @relation(fields: [memberId], references: [id])
+  enteredAt      DateTime
+  exitedAt       DateTime
+  durationMinutes Int
+  createdAt      DateTime  @default(now())
+
+  @@index([memberId, enteredAt])
+  @@index([enteredAt])
+}
+
+// Facility config (gym capacity, hours, etc.). One row per facility.
+model Facility {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  slug         String   @unique
+  maxCapacity  Int
+  openTime     String   // "06:00"
+  closeTime    String   // "23:00"
+  address      String?
+  updatedAt    DateTime @updatedAt
+}
