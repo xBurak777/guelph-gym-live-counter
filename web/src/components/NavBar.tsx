@@ -46,17 +46,17 @@ export default function NavBar() {
             priority
             className="h-12 w-12 xl:h-14 xl:w-14 object-contain"
           />
-          <div className="leading-tight hidden sm:block lg:hidden min-[1600px]:block">
-            <div className="text-sm font-black tracking-tight text-slate-900 group-hover:text-gryphon-red transition-colors whitespace-nowrap">
+          <div className="leading-tight hidden sm:block lg:hidden xl:block">
+            <div className="text-[13px] xl:text-sm min-[1600px]:text-base font-black tracking-tight text-slate-900 group-hover:text-gryphon-red transition-colors whitespace-nowrap">
               GRYPHON FIT & REC
             </div>
-            <div className="text-[9px] font-bold tracking-widest text-gryphon-red whitespace-nowrap">
+            <div className="text-[9px] min-[1600px]:text-[10px] font-bold tracking-widest text-gryphon-red whitespace-nowrap">
               UNIVERSITY OF GUELPH
             </div>
           </div>
         </Link>
 
-        <ul className="hidden xl:flex items-center gap-3 2xl:gap-4 text-sm font-semibold text-slate-800">
+        <ul className="hidden xl:flex items-center gap-2 min-[1600px]:gap-4 text-sm font-semibold text-slate-800">
           {brand.nav.map((item) => (
             <li key={item.label} className="group relative">
               <button className="flex items-center gap-1 py-2 hover:text-gryphon-red transition-colors whitespace-nowrap">
@@ -88,7 +88,7 @@ export default function NavBar() {
 
         <div className="ml-auto flex items-center gap-2 xl:gap-3 shrink-0">
           {/* Desktop search — visible md+ */}
-          <div className="hidden md:block w-36 lg:w-32 xl:w-48">
+          <div className="hidden md:block w-36 lg:w-32 xl:w-32 min-[1600px]:w-44">
             <SearchBox variant="nav" placeholder="Search…" />
           </div>
 
