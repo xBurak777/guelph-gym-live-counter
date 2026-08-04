@@ -46,7 +46,7 @@ export default function NavBar() {
             priority
             className="h-10 w-10 object-contain"
           />
-          <div className="leading-tight hidden sm:block lg:hidden 2xl:block">
+          <div className="leading-tight hidden sm:block lg:hidden min-[1600px]:block">
             <div className="text-sm font-black tracking-tight text-slate-900 group-hover:text-gryphon-red transition-colors whitespace-nowrap">
               GRYPHON FIT & REC
             </div>
@@ -56,7 +56,7 @@ export default function NavBar() {
           </div>
         </Link>
 
-        <ul className="hidden lg:flex items-center gap-2 xl:gap-4 text-sm font-semibold text-slate-800">
+        <ul className="hidden xl:flex items-center gap-3 2xl:gap-4 text-sm font-semibold text-slate-800">
           {brand.nav.map((item) => (
             <li key={item.label} className="group relative">
               <button className="flex items-center gap-1 py-2 hover:text-gryphon-red transition-colors whitespace-nowrap">
@@ -101,7 +101,7 @@ export default function NavBar() {
 
           <button
             onClick={() => setOpenMobile((v) => !v)}
-            className="lg:hidden rounded-lg border border-slate-200 p-2 text-slate-700 hover:border-slate-300"
+            className="xl:hidden rounded-lg border border-slate-200 p-2 text-slate-700 hover:border-slate-300"
             aria-label="Toggle menu"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -117,7 +117,7 @@ export default function NavBar() {
 
       {/* mobile menu */}
       {openMobile && (
-        <div className="lg:hidden border-t border-slate-200 bg-white">
+        <div className="xl:hidden border-t border-slate-200 bg-white">
           <div className="mx-auto max-w-7xl px-6 py-3 divide-y divide-slate-100">
             {/* Mobile search sits at the top of the menu */}
             <div className="py-3 md:hidden">
