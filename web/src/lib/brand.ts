@@ -40,9 +40,13 @@ export const brand = {
       label: "Fitness / Wellness",
       children: [
         { label: "Personal Training", href: "/fitness/personal-training" },
+        { label: "Group Personal Training", href: "/fitness/group-personal-training" },
         { label: "Group Fitness Classes", href: "/fitness/group-classes" },
         { label: "NRG Schedule", href: "/nrg" },
+        { label: "NRG Zone", href: "/fitness/nrg-zone" },
         { label: "Wellness Programs", href: "/fitness/wellness" },
+        { label: "Gryphons Performance Academy", href: "/fitness/gpa" },
+        { label: "Fitness Certifications", href: "/fitness/fitness-certifications" },
       ],
     },
     {
@@ -50,7 +54,10 @@ export const brand = {
       children: [
         { label: "Aquatics", href: "/skills/aquatics" },
         { label: "Dance", href: "/skills/dance" },
+        { label: "Martial Arts", href: "/skills/martial-arts" },
         { label: "Instructor Certifications", href: "/skills/certifications" },
+        { label: "Aquatic & Safety Certifications", href: "/skills/aquatic-safety-certifications" },
+        { label: "Team Building", href: "/skills/team-building" },
       ],
     },
     {
@@ -60,6 +67,8 @@ export const brand = {
         { label: "How to Register", href: "/membership/register" },
         { label: "Day & Week Passes", href: "/membership/passes" },
         { label: "Personal Training Packages", href: "/membership/pt-packages" },
+        { label: "Locker & Towel Service", href: "/membership/locker-towel" },
+        { label: "Equipment Lending", href: "/membership/equipment-lending" },
       ],
     },
     {
@@ -67,15 +76,35 @@ export const brand = {
       children: [
         { label: "Drop-in Recreation", href: "/sports/drop-in" },
         { label: "Intramurals", href: "/sports/intramurals" },
+        { label: "Intramural Tournaments", href: "/sports/intramurals/tournaments" },
+        { label: "Intramural Policies", href: "/sports/intramurals/policies" },
         { label: "Sport Clubs", href: "/sports/clubs" },
+        { label: "Community Leagues", href: "/sports/community-leagues" },
         { label: "Rock Climbing", href: "/sports/climbing" },
       ],
     },
     {
       label: "Kids & Camps",
       children: [
+        { label: "Kids & Camps Home", href: "/kids" },
+        { label: "Activity Camps", href: "/kids/activity-camps" },
+        { label: "Sport Camps", href: "/kids/sport-camps" },
+        { label: "Skill Development", href: "/kids/skill-development" },
+        { label: "Birthdays & Group Bonding", href: "/kids/birthdays" },
+        { label: "School Year Programs", href: "/kids/school-year" },
         { label: "Swim Lessons", href: "/kids/swim" },
-        { label: "Sport & Activity Camps", href: "/kids/camps" },
+      ],
+    },
+    {
+      label: "Facilities",
+      children: [
+        { label: "All Facilities", href: "/facilities" },
+        { label: "Gryphon Centre Arena", href: "/facilities/arena" },
+        { label: "Gryphon Fieldhouse", href: "/facilities/fieldhouse" },
+        { label: "Aquatic Centre", href: "/facilities/aquatic-centre" },
+        { label: "W.F. Mitchell Athletics Centre", href: "/facilities/mitchell" },
+        { label: "Alumni Stadium", href: "/facilities/alumni-stadium" },
+        { label: "Soccer Complex", href: "/facilities/soccer-complex" },
       ],
     },
     {
@@ -83,6 +112,11 @@ export const brand = {
       children: [
         { label: "About Us", href: "/about" },
         { label: "Valued Members & Staff", href: "/about/valued-members" },
+        { label: "What's New", href: "/about/news" },
+        { label: "Events", href: "/about/events" },
+        { label: "FAQ", href: "/about/faq" },
+        { label: "IEDI", href: "/about/iedi" },
+        { label: "Job Opportunities", href: "/about/jobs" },
         { label: "Hours", href: "/hours" },
         { label: "Contact", href: "/contact" },
         { label: "Policies", href: "/about/policies" },
