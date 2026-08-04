@@ -89,7 +89,7 @@ export default function NavBar() {
         <div className="ml-auto flex items-center gap-3">
           {/* Desktop search — visible md+ */}
           <div className="hidden md:block w-56 lg:w-64">
-            <SearchBox variant="nav" />
+            <SearchBox variant="nav" placeholder="Search programs, staff…" />
           </div>
 
           <Link
@@ -121,7 +121,11 @@ export default function NavBar() {
           <div className="mx-auto max-w-7xl px-6 py-3 divide-y divide-slate-100">
             {/* Mobile search sits at the top of the menu */}
             <div className="py-3 md:hidden">
-              <SearchBox variant="nav" onNavigate={() => setOpenMobile(false)} />
+              <SearchBox
+                variant="nav-mobile"
+                onNavigate={() => setOpenMobile(false)}
+                placeholder="Search programs, staff, hours…"
+              />
             </div>
             {brand.nav.map((item) => (
               <div key={item.label} className="py-2">

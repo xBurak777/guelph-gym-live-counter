@@ -23,7 +23,7 @@ const CATEGORY_COLORS: Record<SearchEntry["category"], string> = {
 };
 
 type Props = {
-  variant?: "nav" | "hero";
+  variant?: "nav" | "nav-mobile" | "hero";
   onNavigate?: () => void; // fired when a result is clicked (used to close mobile menu)
   placeholder?: string;
 };
@@ -31,7 +31,7 @@ type Props = {
 export default function SearchBox({
   variant = "nav",
   onNavigate,
-  placeholder = "Search programs, staff, hours…",
+  placeholder = "Search…",
 }: Props) {
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
@@ -87,12 +87,19 @@ export default function SearchBox({
     }
   }
 
-  const inputBase =
-    variant === "hero"
-      ? "w-full rounded-full border border-slate-300 bg-white pl-11 pr-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-gryphon-red focus:ring-2 focus:ring-gryphon-red/20 transition"
-      : "w-full rounded-full border border-slate-200 bg-slate-50 pl-9 pr-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-gryphon-red focus:ring-2 focus:ring-gryphon-red/20 transition";
+  const isHero = variant === "hero";
+  const inputBase = isHero
+    ? "w-full rounded-full border border-slate-300 bg-white pl-11 pr-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-gryphon-red focus:ring-2 focus:ring-gryphon-red/20 transition"
+    : "w-full rounded-full border border-slate-200 bg-slate-50 pl-9 pr-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-gryphon-red focus:ring-2 focus:ring-gryphon-red/20 transition";
 
-  const iconSize = variant === "hero" ? "h-5 w-5 left-3.5" : "h-4 w-4 left-3";
+  const iconSize = isHero ? "h-5 w-5 left-3.5" : "h-4 w-4 left-3";
+
+  // Dropdown positioning: nav (desktop) anchors right and forces wider width;
+  // nav-mobile (inside opened menu) and hero fill the input's width.
+  const dropdownPos =
+    variant === "nav"
+      ? "right-0 w-[380px] max-w-[calc(100vw-2rem)]"
+      : "left-0 right-0";
 
   return (
     <div ref={containerRef} className="relative w-full">
@@ -141,7 +148,7 @@ export default function SearchBox({
 
       {isOpen && query.trim().length >= 2 && (
         <div
-          className="absolute left-0 right-0 top-full mt-2 rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden z-50 max-h-[70vh] overflow-y-auto"
+          className={`absolute top-full mt-2 rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden z-50 max-h-[70vh] overflow-y-auto ${dropdownPos}`}
           role="listbox"
         >
           {results.length === 0 ? (
