@@ -36,8 +36,8 @@ export default function NavBar() {
       </div>
 
       {/* main nav */}
-      <nav className="mx-auto max-w-7xl px-6 py-4 flex items-center gap-4 xl:gap-6">
-        <Link href="/" className="flex items-center gap-3 shrink-0 group">
+      <nav className="mx-auto max-w-7xl px-4 lg:px-4 xl:px-6 py-4 flex items-center gap-3 xl:gap-5">
+        <Link href="/" className="flex items-center gap-2 shrink-0 group">
           <Image
             src="/images/logos/fitandrec-logo.png"
             alt="Guelph Gryphons Fit & Rec"
@@ -46,7 +46,7 @@ export default function NavBar() {
             priority
             className="h-10 w-10 object-contain"
           />
-          <div className="leading-tight hidden sm:block lg:hidden xl:block">
+          <div className="leading-tight hidden sm:block lg:hidden 2xl:block">
             <div className="font-black tracking-tight text-slate-900 group-hover:text-gryphon-red transition-colors whitespace-nowrap">
               GRYPHON FIT & REC
             </div>
@@ -56,7 +56,7 @@ export default function NavBar() {
           </div>
         </Link>
 
-        <ul className="hidden lg:flex items-center gap-3 xl:gap-5 text-sm font-semibold text-slate-800">
+        <ul className="hidden lg:flex items-center gap-2 xl:gap-4 text-sm font-semibold text-slate-800">
           {brand.nav.map((item) => (
             <li key={item.label} className="group relative">
               <button className="flex items-center gap-1 py-2 hover:text-gryphon-red transition-colors whitespace-nowrap">
@@ -86,15 +86,15 @@ export default function NavBar() {
           ))}
         </ul>
 
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-2 xl:gap-3 shrink-0">
           {/* Desktop search — visible md+ */}
-          <div className="hidden md:block w-44 lg:w-40 xl:w-56">
-            <SearchBox variant="nav" placeholder="Search programs, staff…" />
+          <div className="hidden md:block w-36 lg:w-32 xl:w-48">
+            <SearchBox variant="nav" placeholder="Search…" />
           </div>
 
           <Link
             href="/membership"
-            className="hidden md:inline-flex items-center whitespace-nowrap rounded-full bg-gryphon-red px-4 py-2 text-sm font-semibold text-white hover:bg-gryphon-red-dark transition-colors"
+            className="hidden md:inline-flex items-center whitespace-nowrap rounded-full bg-gryphon-red px-3.5 py-2 text-sm font-semibold text-white hover:bg-gryphon-red-dark transition-colors shrink-0"
           >
             Join Now
           </Link>
