@@ -82,6 +82,7 @@ export const brand = {
       label: "About",
       children: [
         { label: "About Us", href: "/about" },
+        { label: "Valued Members & Staff", href: "/about/valued-members" },
         { label: "Hours", href: "/hours" },
         { label: "Contact", href: "/contact" },
         { label: "Policies", href: "/about/policies" },

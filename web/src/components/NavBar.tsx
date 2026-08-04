@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useState } from "react";
 import { brand } from "@/lib/brand";
+import SearchBox from "@/components/SearchBox";
 
 export default function NavBar() {
   const [openMobile, setOpenMobile] = useState(false);
@@ -55,7 +56,7 @@ export default function NavBar() {
           </div>
         </Link>
 
-        <ul className="hidden lg:flex items-center gap-6 text-sm font-semibold text-slate-800">
+        <ul className="hidden lg:flex items-center gap-5 text-sm font-semibold text-slate-800">
           {brand.nav.map((item) => (
             <li key={item.label} className="group relative">
               <button className="flex items-center gap-1 py-2 hover:text-gryphon-red transition-colors">
@@ -86,6 +87,11 @@ export default function NavBar() {
         </ul>
 
         <div className="ml-auto flex items-center gap-3">
+          {/* Desktop search — visible md+ */}
+          <div className="hidden md:block w-56 lg:w-64">
+            <SearchBox variant="nav" />
+          </div>
+
           <Link
             href="/membership"
             className="hidden md:inline-flex items-center rounded-full bg-gryphon-red px-4 py-2 text-sm font-semibold text-white hover:bg-gryphon-red-dark transition-colors"
@@ -113,6 +119,10 @@ export default function NavBar() {
       {openMobile && (
         <div className="lg:hidden border-t border-slate-200 bg-white">
           <div className="mx-auto max-w-7xl px-6 py-3 divide-y divide-slate-100">
+            {/* Mobile search sits at the top of the menu */}
+            <div className="py-3 md:hidden">
+              <SearchBox variant="nav" onNavigate={() => setOpenMobile(false)} />
+            </div>
             {brand.nav.map((item) => (
               <div key={item.label} className="py-2">
                 <button

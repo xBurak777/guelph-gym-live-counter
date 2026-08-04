@@ -89,22 +89,43 @@ export default function LiveCounter({ initial }: { initial: Occupancy }) {
         </div>
       </div>
 
-      {/* Capacity bar with proper 4-column labels */}
+      {/* Capacity bar with band-aligned labels. Thresholds must match getCrowdLevel(): 35 / 65 / 85. */}
       <div className="px-7 py-5 border-t border-white/10">
-        <div className="h-2.5 w-full rounded-full bg-white/10 overflow-hidden">
+        {/* Segmented bar: 4 fixed-width bands with tick markers at 35/65/85 */}
+        <div className="relative h-2.5 w-full rounded-full bg-white/10 overflow-hidden">
           <div
             className="h-full rounded-full transition-all duration-700"
             style={{ width: `${Math.min(100, data.percentFull)}%`, backgroundColor: data.crowd.color }}
           />
+          {/* Threshold ticks */}
+          {[35, 65, 85].map((pct) => (
+            <span
+              key={pct}
+              className="absolute top-0 h-full w-px bg-white/25"
+              style={{ left: `${pct}%` }}
+              aria-hidden
+            />
+          ))}
         </div>
-        <div
-          className="mt-2 text-[10px] uppercase tracking-widest text-white/50 font-semibold"
-          style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)" }}
-        >
-          <span className="text-left">Quiet</span>
-          <span className="text-center">Moderate</span>
-          <span className="text-center">Busy</span>
-          <span className="text-right">Packed</span>
+        {/* Labels positioned to line up with band centers: quiet 0-35 (center 17.5%), moderate 35-65 (center 50%), busy 65-85 (center 75%), packed 85-100 (center 92.5%) */}
+        <div className="relative mt-2 text-[10px] uppercase tracking-widest font-semibold h-4">
+          {[
+            { level: "quiet", label: "Quiet", center: 8 },
+            { level: "moderate", label: "Moderate", center: 40 },
+            { level: "busy", label: "Busy", center: 65 },
+            { level: "packed", label: "Packed", center: 92 },
+          ].map((b) => (
+            <span
+              key={b.level}
+              className="absolute -translate-x-1/2 whitespace-nowrap transition-colors"
+              style={{
+                left: `${b.center}%`,
+                color: b.level === data.crowd.level ? data.crowd.color : "rgba(255,255,255,0.5)",
+              }}
+            >
+              {b.label}
+            </span>
+          ))}
         </div>
       </div>
 

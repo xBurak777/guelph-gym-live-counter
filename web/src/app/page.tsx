@@ -2,8 +2,10 @@ import Image from "next/image";
 import Link from "next/link";
 import PageShell from "@/components/PageShell";
 import LiveCounter from "@/components/LiveCounter";
+import ValuedMembersSlider from "@/components/ValuedMembersSlider";
 import { InfoCard, Section, SectionHeader, CTAButton, StatGrid } from "@/components/ui";
 import { computeOccupancy } from "@/lib/occupancy";
+import { FEATURED_STAFF } from "@/data/staff";
 
 export const dynamic = "force-dynamic";
 
@@ -283,6 +285,9 @@ export default async function HomePage() {
           </div>
         </div>
       </Section>
+
+      {/* VALUED MEMBERS AND STAFF (real people from fitandrec.gryphons.ca) */}
+      <ValuedMembersSlider members={FEATURED_STAFF} />
 
       {/* BOTTOM CTA */}
       <section className="bg-gryphon-black text-white">
