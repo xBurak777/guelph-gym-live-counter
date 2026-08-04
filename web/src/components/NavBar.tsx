@@ -47,10 +47,10 @@ export default function NavBar() {
             className="h-10 w-10 object-contain"
           />
           <div className="leading-tight hidden sm:block lg:hidden 2xl:block">
-            <div className="font-black tracking-tight text-slate-900 group-hover:text-gryphon-red transition-colors whitespace-nowrap">
+            <div className="text-sm font-black tracking-tight text-slate-900 group-hover:text-gryphon-red transition-colors whitespace-nowrap">
               GRYPHON FIT & REC
             </div>
-            <div className="text-[10px] font-bold tracking-widest text-gryphon-red whitespace-nowrap">
+            <div className="text-[9px] font-bold tracking-widest text-gryphon-red whitespace-nowrap">
               UNIVERSITY OF GUELPH
             </div>
           </div>
