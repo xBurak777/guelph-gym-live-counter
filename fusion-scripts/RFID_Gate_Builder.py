@@ -145,30 +145,31 @@ def mm(x):
 def create_user_params(design):
     """Create all user parameters in the Fusion Parameters dialog."""
     user_params = design.userParameters
-    unitsMgr = design.unitsManager
 
     for name, value, unit, comment in PARAMS:
         existing = user_params.itemByName(name)
         if existing:
             # Update value in case script is re-run
             try:
-                existing.expression = f"{value} {unit}" if unit else f"{value}"
+                if unit:
+                    existing.expression = f"{value} {unit}"
+                else:
+                    existing.expression = f"{value}"
                 existing.comment = comment
             except Exception:
                 pass
             continue
 
-        # Create new parameter
-        if unit:
-            expression = f"{value} {unit}"
-        else:
-            expression = f"{value}"
-
+        # Create new parameter using ValueInput
         try:
-            user_params.add(name, adsk.core.ValueInput.createByString(expression),
-                            unit if unit else "", comment)
+            if unit:
+                value_input = adsk.core.ValueInput.createByReal(value / 10.0)  # mm -> cm
+                user_params.add(name, value_input, unit, comment)
+            else:
+                value_input = adsk.core.ValueInput.createByReal(value)
+                user_params.add(name, value_input, "", comment)
         except Exception as e:
-            # If parameter creation fails, log but continue
+            # If parameter creation fails, log but continue building geometry
             print(f"Warning: could not create parameter {name}: {e}")
 
 
@@ -796,8 +797,9 @@ def run(context):
         design = adsk.fusion.Design.cast(product)
         design.designType = adsk.fusion.DesignTypes.ParametricDesignType
 
-        # Set units to mm
-        design.unitsManager.defaultLengthUnits = "mm"
+        # Note: units are set at the document level in Fusion's Document Settings.
+        # The default is mm which matches this script. All internal math uses mm and
+        # is converted to cm (Fusion's internal length unit) via the mm() helper.
 
         # Build parameter dictionary (mm float values, for internal math)
         params = {name: value for name, value, unit, comment in PARAMS}
