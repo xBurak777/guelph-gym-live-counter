@@ -50,9 +50,38 @@ These UIDs are the primary keys used to register users in the Neon `cards` table
 
 ---
 
+## Test 04 — TFT Demo v2
+
+Verifies the 2.8" ILI9341 TFT works AND showcases the target UI design.
+
+**Wiring:**
+
+| TFT pin | ESP32 pin |
+| ------- | --------- |
+| VCC     | 3V3       |
+| GND     | GND       |
+| LED     | 3V3       |
+| CS      | GPIO 5    |
+| RESET   | GPIO 4    |
+| DC      | GPIO 2    |
+| MOSI    | GPIO 23   |
+| SCK     | GPIO 18   |
+| MISO    | GPIO 19   |
+
+**Libraries required:** `Adafruit GFX`, `Adafruit ILI9341`.
+
+**Pass criteria:** Screen cycles every 4 seconds through 3 states:
+
+1. **STANDBY** — "TAP CARD" prompt with Gryphon-red header and gold occupancy bar
+2. **SUCCESS** — Green checkmark with welcome message and member ID
+3. **DENIED** — Red X-mark with "ACCESS DENIED" message
+
+All three screens share a consistent Gryphon-branded header and live-occupancy footer.
+
+---
+
 ## Next test sketches (not yet built)
 
-- **04** — TFT ILI9341 graphics hello world
 - **05** — SG90 servo sweep test
 - **06** — WiFi captive portal (WiFiManager)
 - **07** — API POST to Vercel `/api/scan` endpoint

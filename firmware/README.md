@@ -23,7 +23,7 @@ Each phase must pass before moving to the next. Test sketches live in `test_sket
 | A     | Arduino IDE + ESP32 upload path     | `01_blink`           | ✅ done |
 | B.1   | PN532 I2C wiring                    | `02_i2c_scanner`     | ✅ done |
 | B.1.5 | PN532 reads real cards              | `03_pn532_reader`    | ✅ done |
-| B.2   | TFT ILI9341 graphics                | `04_tft_hello` (WIP) | pending |
+| B.2   | TFT ILI9341 graphics + UI preview   | `04_tft_demo`        | ✅ done |
 | B.3   | SG90 servo motion                   | `05_servo_sweep`     | pending |
 | C     | WiFi captive portal (WiFiManager)   | `06_wifi_portal`     | pending |
 | D     | Full firmware, card registration    | `gate_controller`    | pending |
