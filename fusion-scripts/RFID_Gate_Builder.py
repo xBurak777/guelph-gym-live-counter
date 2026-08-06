@@ -212,8 +212,9 @@ def extrude_profile(component, sketch, distance, operation=None):
     return extrudes.add(ext_input)
 
 
-def cut_extrude(component, sketch, distance, start_offset=0):
-    """Cut through bodies from the sketch plane by distance (mm)."""
+def cut_extrude(component, sketch, distance, target_bodies=None):
+    """Cut into target_bodies from the sketch plane by distance (mm).
+    If target_bodies is None, uses all bodies currently in the component."""
     profiles = sketch.profiles
     if profiles.count == 0:
         return None
@@ -234,12 +235,22 @@ def cut_extrude(component, sketch, distance, start_offset=0):
     dist = adsk.core.ValueInput.createByReal(mm(distance))
     ext_input.setDistanceExtent(False, dist)
 
-    if start_offset != 0:
-        offset = adsk.core.ValueInput.createByReal(mm(start_offset))
-        start = adsk.fusion.OffsetStartDefinition.create(offset)
-        ext_input.startExtent = start
+    # Explicitly set participant bodies so the cut has a target
+    try:
+        if target_bodies is None:
+            body_list = []
+            for b in component.bRepBodies:
+                body_list.append(b)
+            target_bodies = body_list
+        if target_bodies:
+            ext_input.participantBodies = target_bodies
+    except Exception:
+        pass
 
-    return extrudes.add(ext_input)
+    try:
+        return extrudes.add(ext_input)
+    except Exception:
+        return None
 
 
 # ============================================================
@@ -351,7 +362,7 @@ def build_dome(component, params, z_offset):
     return body
 
 
-def cut_front_panel_window(component, params):
+def cut_front_panel_window(component, params, target_body=None):
     """Cut a rectangular window on the front (Y+ face) of the pillar."""
     sketches = component.sketches
 
@@ -370,22 +381,20 @@ def cut_front_panel_window(component, params):
     # Panel center Z from pillar top going down
     panel_z_center = params["pillar_height"] - params["panel_center_from_top"]
 
-    # Rectangle on the front face — sketch is in local coords of the plane
-    # X axis of sketch runs along pillar width, Y axis runs vertically (Z world)
     draw_rectangle(
         sketch, 0, panel_z_center,
         params["panel_width"], params["panel_height"]
     )
 
-    # Cut into pillar by recess depth + wall thickness (fully through wall)
+    targets = [target_body] if target_body else None
     cut_extrude(
         component, sketch,
         -(params["panel_recess_depth"] + params["wall_thickness"] + 1),
-        start_offset=0
+        target_bodies=targets
     )
 
 
-def cut_display_cutouts(component, params):
+def cut_display_cutouts(component, params, target_body=None):
     """Cut TFT + LCD rectangular openings on the front panel."""
     sketches = component.sketches
 
@@ -399,6 +408,7 @@ def cut_display_cutouts(component, params):
         return
 
     panel_z_center = params["pillar_height"] - params["panel_center_from_top"]
+    targets = [target_body] if target_body else None
 
     # TFT cutout
     tft_sketch = sketches.add(front_plane)
@@ -406,7 +416,7 @@ def cut_display_cutouts(component, params):
         tft_sketch, 0, panel_z_center + params["tft_offset_y"],
         params["tft_active_w"], params["tft_active_h"]
     )
-    cut_extrude(component, tft_sketch, -(params["wall_thickness"] + 2))
+    cut_extrude(component, tft_sketch, -(params["wall_thickness"] + 2), target_bodies=targets)
 
     # LCD cutout
     lcd_sketch = sketches.add(front_plane)
@@ -414,10 +424,10 @@ def cut_display_cutouts(component, params):
         lcd_sketch, 0, panel_z_center - params["lcd_offset_y"],
         params["lcd_view_w"], params["lcd_view_h"]
     )
-    cut_extrude(component, lcd_sketch, -(params["wall_thickness"] + 2))
+    cut_extrude(component, lcd_sketch, -(params["wall_thickness"] + 2), target_bodies=targets)
 
 
-def cut_magnet_pocket(component, params):
+def cut_magnet_pocket(component, params, target_body=None):
     """Cut a magnet pocket on the lane-facing side (X- face) of receiver pillar."""
     sketches = component.sketches
 
@@ -432,14 +442,13 @@ def cut_magnet_pocket(component, params):
         return
 
     sketch = sketches.add(side_plane)
-    # On this plane, X is world Y, Y is world Z
-    # Magnet at 0 (Y-centered) at height magnet_height_from_bottom
     draw_rectangle(
         sketch, 0, params["magnet_height_from_bottom"],
         params["magnet_size"], params["magnet_size"]
     )
 
-    cut_extrude(component, sketch, params["magnet_pocket_depth"])
+    targets = [target_body] if target_body else None
+    cut_extrude(component, sketch, params["magnet_pocket_depth"], target_bodies=targets)
 
 
 def build_base_plate(component, params):
@@ -538,18 +547,18 @@ def run(context):
         # === Reader Pillar ===
         reader_occ = create_component(root_comp.occurrences, "Reader_Pillar")
         reader = reader_occ.component
-        build_pillar_shell(reader, params)
+        reader_shell_body = build_pillar_shell(reader, params)
         build_dome(reader, params, params["pillar_height"])
-        cut_front_panel_window(reader, params)
-        cut_display_cutouts(reader, params)
+        cut_front_panel_window(reader, params, target_body=reader_shell_body)
+        cut_display_cutouts(reader, params, target_body=reader_shell_body)
         build_base_plate(reader, params)
 
         # === Receiver Pillar ===
         receiver_occ = create_component(root_comp.occurrences, "Receiver_Pillar")
         receiver = receiver_occ.component
-        build_pillar_shell(receiver, params)
+        receiver_shell_body = build_pillar_shell(receiver, params)
         build_dome(receiver, params, params["pillar_height"])
-        cut_magnet_pocket(receiver, params)
+        cut_magnet_pocket(receiver, params, target_body=receiver_shell_body)
         build_base_plate(receiver, params)
 
         # === Door Assembly ===
