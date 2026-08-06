@@ -808,7 +808,9 @@ def run(context):
         create_user_params(design)
 
         root_comp = design.rootComponent
-        root_comp.name = "RFID_Gate_Assembly"
+        # Note: root component name is fixed by Fusion until the document is saved.
+        # After you save the document with File > Save, the root takes the file's name.
+        # Suggested filename: RFID_Gate_Assembly
 
         # === STEP 2: Create top-level components ===
         reader_occ = create_component(root_comp.occurrences, "Reader_Pillar")
