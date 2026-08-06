@@ -1,46 +1,50 @@
 """
-RFID Gate Builder — Autodesk Fusion Python Script (SIMPLIFIED)
-================================================================
+RFID Gate Builder v3 — LIDE-Style Reference Match
+====================================================
 
-Guelph Fit & Rec live-occupancy gate — 3D design model.
+Guelph Fit & Rec gate — matches LIDE swing gate visual language.
 
 Designer: Fatih
-Reference gate: LIDE-style swing gate with 2 pill-shaped pedestals + swing door
-Approach: Design-first, fabrication-flexible (3D print, wood, MDF, or foam-core)
+Physical build plan:
+    - Pillar bodies: thin plywood/MDF, painted silver
+    - LCD/reader housings: 3D printed inserts
+    - Door: clear hard plastic (acrylic/polycarbonate)
+    - One door hinged on LEFT pillar, opens by rotating into the pillar
+    - Two SG90 servos (top + bottom) attached to door for stable pivot
 
-TARGET DIMENSIONS
-------------------
-- Assembly total width: 508 mm (20 in)
-- Each pillar: 152 mm wide x 254 mm deep x 381 mm tall (6 x 10 x 15 in)
-- Lane gap between pillars: 204 mm (8 in)
-- Door swings across the lane from the right (Receiver) pillar
+DIMENSIONS (matching LIDE reference)
+--------------------------------------
+Each pillar:    150 W × 100 D × 1000 H mm (like a tall mailbox)
+Lane gap:       600 mm between inner faces (person walkthrough)
+Total width:    900 mm (150 + 600 + 150)
+Door panel:     600 × 800 × 5 mm clear plastic
+Door hinges:    LEFT pillar, at inner-front edge
 
-WHAT THIS SCRIPT BUILDS
-------------------------
-Simple, clean visual model:
-1. Reader_Pillar   — hollow pill-shaped shell + dome cap + front panel window
-2. Receiver_Pillar — hollow pill-shaped shell + dome cap + magnet pocket
-3. Door_Assembly   — swing door panel + servo coupler block
-4. Front panel with cutouts for TFT (43.2 x 57.6 mm) + LCD 16x2 (64.5 x 16 mm)
+COMPONENT LAYOUT
+-----------------
+LEFT pillar (Reader):
+    - PN532 RFID reader: pocket in TOP face
+    - TFT display housing: sits on TOP of pillar, angled toward user
+    - LCD 16x2: rectangular slot on lane-facing side, upper third
+    - Two SG90 servo pockets: lane-facing side, top (~800mm) and bottom (~200mm)
+    - Cable channel: vertical channel inside back wall (for hidden wiring)
+    - ESP32 mount bosses: interior wall
 
-No split lines, no screw bosses, no alignment ridges. This is the pure design.
-If you print this, you can add splits manually. If you build in wood, you have
-a clear reference to work from.
+RIGHT pillar (Receiver):
+    - LCD 16x2: matching LCD slot on lane-facing side, same height as left
+    - Magnet catch pocket: lane-facing side at door top height
+    - Otherwise structural only
 
-REQUIREMENTS
--------------
-- Fusion in ASSEMBLY mode (not Part Design mode)
-- If you see "Part Design documents can only contain one component", switch to Assembly
-- Fresh empty document recommended (File > New Design)
+Green LED accent ring: visible groove ~40mm from top of each pillar
+Base plates: one under each pillar for stability
 
 HOW TO RUN
 -----------
-1. Open Fusion, verify you're in Assembly mode (Browser shows no "Part Design" label)
-2. UTILITIES > ADD-INS > Scripts and Add-Ins (Shift+S)
-3. Select RFID_Gate_Builder > Run
-4. Wait 15-30 seconds
-
-If a red error box appears, screenshot it and send to Fatih's AI assistant.
+1. Open Fusion in ASSEMBLY mode
+2. File > New Design (fresh document)
+3. UTILITIES > ADD-INS > Scripts and Add-Ins (Shift+S)
+4. Select RFID_Gate_Builder > Run
+5. Wait 15-30 seconds
 """
 
 import adsk.core
@@ -50,55 +54,68 @@ import math
 
 
 # ============================================================
-# PARAMETERS — all dimensions in millimeters
-# ============================================================
-# Every value here becomes an editable User Parameter after the
-# script runs. Modify -> Change Parameters to tweak the model.
+# PARAMETERS — all mm
 # ============================================================
 
 PARAMS = [
-    # Assembly
-    ("assembly_total_width", 508.0, "mm", "Full 20-inch width of gate"),
-    ("pillar_width",         152.0, "mm", "Each pillar's width (lane-facing dim)"),
-    ("pillar_depth",         254.0, "mm", "Each pillar's depth (front-to-back)"),
-    ("pillar_height",        341.0, "mm", "Pillar body height (excludes dome)"),
-    ("dome_height",           40.0, "mm", "Curved top dome height"),
-    ("wall_thickness",         4.0, "mm", "Exterior wall thickness"),
-    ("corner_radius",         35.0, "mm", "Pill-shape corner fillet"),
+    # Pillar dimensions (matches LIDE reference proportions)
+    ("pillar_width",              150.0, "mm", "Pillar X width (lane-parallel)"),
+    ("pillar_depth",              100.0, "mm", "Pillar Y depth (lane-perpendicular)"),
+    ("pillar_height",            1000.0, "mm", "Pillar total height"),
+    ("pillar_wall",                 5.0, "mm", "Wall thickness (plywood build)"),
 
-    # Front panel window
-    ("panel_width",          130.0, "mm", "Front panel width"),
-    ("panel_height",          85.0, "mm", "Front panel height"),
-    ("panel_recess_depth",     2.0, "mm", "Panel recess depth"),
-    ("panel_center_from_top", 90.0, "mm", "Distance from pillar top to panel center"),
+    # Assembly spacing
+    ("lane_gap",                  600.0, "mm", "Gap between pillar inner faces"),
 
-    # TFT display (DIYmalls 2.8" ILI9341)
-    ("tft_active_w",          43.2, "mm", "TFT visible screen width"),
-    ("tft_active_h",          57.6, "mm", "TFT visible screen height"),
-    ("tft_offset_y",          14.0, "mm", "TFT center offset up from panel center"),
+    # Top display housing (angled black box on reader pillar top)
+    ("display_housing_w",         140.0, "mm", "Top display housing width"),
+    ("display_housing_d",          95.0, "mm", "Top display housing depth"),
+    ("display_housing_h",         120.0, "mm", "Top display housing height"),
+    ("display_angle",              15.0, "deg", "Display tilt toward user (unused, cosmetic)"),
 
-    # LCD 16x2
-    ("lcd_view_w",            64.5, "mm", "LCD visible view width"),
-    ("lcd_view_h",            16.0, "mm", "LCD visible view height"),
-    ("lcd_offset_y",          25.0, "mm", "LCD center offset down from panel center"),
+    # LCD 16x2 slot (lane-facing side)
+    ("lcd_view_w",                 64.5, "mm", "LCD visible width"),
+    ("lcd_view_h",                 16.0, "mm", "LCD visible height"),
+    ("lcd_height_from_bottom",    800.0, "mm", "LCD center height from pillar base"),
 
-    # Magnet pocket (receiver pillar door latch)
-    ("magnet_size",           10.0, "mm", "Magnet pocket square size"),
-    ("magnet_pocket_depth",    3.0, "mm", "Magnet pocket depth"),
-    ("magnet_height_from_bottom", 100.0, "mm", "Magnet height from pillar bottom"),
+    # PN532 reader pocket (top face of reader pillar)
+    ("pn532_pocket_w",             45.0, "mm", "PN532 pocket width"),
+    ("pn532_pocket_d",             45.0, "mm", "PN532 pocket depth"),
+    ("pn532_pocket_h",              8.0, "mm", "PN532 pocket depth into pillar top"),
 
-    # Door
-    ("door_length",          180.0, "mm", "Door panel length"),
-    ("door_height",          100.0, "mm", "Door panel height"),
-    ("door_thickness",         3.0, "mm", "Door panel thickness"),
-    ("door_height_from_bottom", 100.0, "mm", "Door center height from bottom"),
+    # Servo pockets (lane-facing side of reader pillar)
+    ("servo_pocket_w",             25.0, "mm", "Servo pocket X"),
+    ("servo_pocket_h",             30.0, "mm", "Servo pocket Z"),
+    ("servo_pocket_depth",         15.0, "mm", "Servo pocket depth into pillar"),
+    ("servo_top_z",               800.0, "mm", "Top servo center Z from pillar bottom"),
+    ("servo_bot_z",               200.0, "mm", "Bottom servo center Z from pillar bottom"),
 
-    # Servo coupler (SG90 attach block)
-    ("coupler_size",          25.0, "mm", "Servo coupler cube edge"),
+    # Cable channel (interior back wall of reader pillar)
+    ("cable_channel_w",            20.0, "mm", "Cable channel width"),
+    ("cable_channel_depth",         8.0, "mm", "Cable channel depth into wall"),
+
+    # Magnet catch (receiver pillar, lane-facing side)
+    ("magnet_pocket_size",         12.0, "mm", "Magnet pocket square size"),
+    ("magnet_pocket_depth",         3.0, "mm", "Magnet pocket depth"),
+    ("magnet_pocket_z",           750.0, "mm", "Magnet pocket center height"),
+
+    # Green LED accent ring (visible groove near top)
+    ("led_groove_w",                6.0, "mm", "LED groove width"),
+    ("led_groove_d",                3.0, "mm", "LED groove depth"),
+    ("led_z_from_top",             40.0, "mm", "LED groove distance from pillar top"),
+
+    # Door panel (clear plastic)
+    ("door_width",                600.0, "mm", "Door panel width (spans lane gap)"),
+    ("door_height",               800.0, "mm", "Door panel height"),
+    ("door_thickness",              5.0, "mm", "Door panel thickness (clear plastic)"),
+    ("door_z_from_bottom",        100.0, "mm", "Door bottom edge height from ground"),
+
+    # Servo coupler blocks (attached to door)
+    ("coupler_size",               30.0, "mm", "Servo coupler cube edge"),
 
     # Base plate
-    ("base_plate_thickness",   6.0, "mm", "Base plate thickness"),
-    ("base_plate_margin",      8.0, "mm", "Base plate margin around shell"),
+    ("base_plate_thickness",        8.0, "mm", "Base plate thickness"),
+    ("base_plate_margin",          20.0, "mm", "Base plate margin around pillar"),
 ]
 
 
@@ -107,66 +124,45 @@ PARAMS = [
 # ============================================================
 
 def mm(x):
-    """Convert mm to Fusion internal units (cm)."""
+    """Convert mm to Fusion internal cm."""
     return x / 10.0
 
 
 def create_user_params(design):
-    """Create editable user parameters in Fusion."""
+    """Create editable user parameters."""
     user_params = design.userParameters
     for name, value, unit, comment in PARAMS:
-        existing = user_params.itemByName(name)
-        if existing:
+        if user_params.itemByName(name):
             continue
         try:
-            if unit:
-                value_input = adsk.core.ValueInput.createByReal(value / 10.0)
-                user_params.add(name, value_input, unit, comment)
+            if unit == "deg":
+                vi = adsk.core.ValueInput.createByReal(math.radians(value))
+                user_params.add(name, vi, "deg", comment)
+            elif unit == "mm":
+                vi = adsk.core.ValueInput.createByReal(value / 10.0)
+                user_params.add(name, vi, "mm", comment)
             else:
-                value_input = adsk.core.ValueInput.createByReal(value)
-                user_params.add(name, value_input, "", comment)
+                vi = adsk.core.ValueInput.createByReal(value)
+                user_params.add(name, vi, "", comment)
         except Exception:
             pass
 
 
-def draw_pill_profile(sketch, cx, cy, width, depth, corner_r):
-    """
-    Draw a pill/stadium shape (rounded rectangle) centered on (cx, cy).
-    Returns the closed profile.
-    """
+def draw_rect_at_origin(sketch, w, h):
+    """Draw rectangle centered on sketch origin. Returns nothing."""
     lines = sketch.sketchCurves.sketchLines
-    arcs = sketch.sketchCurves.sketchArcs
-    r = min(corner_r, min(width, depth) / 2.0 - 0.1)
-
-    hw = width / 2.0
-    hd = depth / 2.0
-
-    p1 = adsk.core.Point3D.create(cx - hw + r, cy - hd, 0)
-    p2 = adsk.core.Point3D.create(cx + hw - r, cy - hd, 0)
-    p3 = adsk.core.Point3D.create(cx + hw, cy - hd + r, 0)
-    p4 = adsk.core.Point3D.create(cx + hw, cy + hd - r, 0)
-    p5 = adsk.core.Point3D.create(cx + hw - r, cy + hd, 0)
-    p6 = adsk.core.Point3D.create(cx - hw + r, cy + hd, 0)
-    p7 = adsk.core.Point3D.create(cx - hw, cy + hd - r, 0)
-    p8 = adsk.core.Point3D.create(cx - hw, cy - hd + r, 0)
-
-    c1 = adsk.core.Point3D.create(cx + hw - r, cy - hd + r, 0)
-    c2 = adsk.core.Point3D.create(cx + hw - r, cy + hd - r, 0)
-    c3 = adsk.core.Point3D.create(cx - hw + r, cy + hd - r, 0)
-    c4 = adsk.core.Point3D.create(cx - hw + r, cy - hd + r, 0)
-
+    p1 = adsk.core.Point3D.create(-w/2, -h/2, 0)
+    p2 = adsk.core.Point3D.create( w/2, -h/2, 0)
+    p3 = adsk.core.Point3D.create( w/2,  h/2, 0)
+    p4 = adsk.core.Point3D.create(-w/2,  h/2, 0)
     lines.addByTwoPoints(p1, p2)
-    arcs.addByCenterStartSweep(c1, p2, math.pi / 2)
+    lines.addByTwoPoints(p2, p3)
     lines.addByTwoPoints(p3, p4)
-    arcs.addByCenterStartSweep(c2, p4, math.pi / 2)
-    lines.addByTwoPoints(p5, p6)
-    arcs.addByCenterStartSweep(c3, p6, math.pi / 2)
-    lines.addByTwoPoints(p7, p8)
-    arcs.addByCenterStartSweep(c4, p8, math.pi / 2)
+    lines.addByTwoPoints(p4, p1)
 
 
-def draw_rectangle(sketch, cx, cy, w, h):
-    """Draw a rectangle centered on (cx, cy) on the sketch."""
+def draw_rect(sketch, cx, cy, w, h):
+    """Draw rectangle centered on (cx, cy) on the sketch."""
     lines = sketch.sketchCurves.sketchLines
     p1 = adsk.core.Point3D.create(cx - w/2, cy - h/2, 0)
     p2 = adsk.core.Point3D.create(cx + w/2, cy - h/2, 0)
@@ -178,20 +174,8 @@ def draw_rectangle(sketch, cx, cy, w, h):
     lines.addByTwoPoints(p4, p1)
 
 
-def create_component(parent_occurrences, name):
-    """Create a new child component."""
-    transform = adsk.core.Matrix3D.create()
-    occ = parent_occurrences.addNewComponent(transform)
-    occ.component.name = name
-    return occ
-
-
-def extrude_profile(component, sketch, distance, operation=None):
-    """Extrude the sketch's largest profile by distance (mm). Returns the extrude feature."""
-    if operation is None:
-        operation = adsk.fusion.FeatureOperations.NewBodyFeatureOperation
-
-    # Pick largest profile
+def pick_biggest_profile(sketch):
+    """Pick the profile with the largest area from a sketch."""
     profiles = sketch.profiles
     if profiles.count == 0:
         return None
@@ -204,311 +188,278 @@ def extrude_profile(component, sketch, distance, operation=None):
             if a > max_area:
                 max_area = a
                 profile = p
+    return profile
 
-    extrudes = component.features.extrudeFeatures
-    ext_input = extrudes.createInput(profile, operation)
-    dist = adsk.core.ValueInput.createByReal(mm(distance))
+
+def extrude_new_body(component, sketch, distance_mm):
+    """Extrude sketch profile as new body by distance_mm (positive or negative)."""
+    profile = pick_biggest_profile(sketch)
+    if not profile:
+        return None
+    ext_input = component.features.extrudeFeatures.createInput(
+        profile, adsk.fusion.FeatureOperations.NewBodyFeatureOperation
+    )
+    dist = adsk.core.ValueInput.createByReal(mm(distance_mm))
     ext_input.setDistanceExtent(False, dist)
-    return extrudes.add(ext_input)
-
-
-def cut_extrude(component, sketch, distance, target_bodies=None):
-    """Cut into target_bodies from the sketch plane by distance (mm).
-    If target_bodies is None, uses all bodies currently in the component."""
-    profiles = sketch.profiles
-    if profiles.count == 0:
+    try:
+        return component.features.extrudeFeatures.add(ext_input)
+    except Exception:
         return None
-    profile = profiles.item(0)
-    if profiles.count > 1:
-        max_area = 0
-        for i in range(profiles.count):
-            p = profiles.item(i)
-            a = p.areaProperties().area
-            if a > max_area:
-                max_area = a
-                profile = p
 
-    extrudes = component.features.extrudeFeatures
-    ext_input = extrudes.createInput(
+
+def extrude_cut(component, sketch, distance_mm, target_body):
+    """Cut into target_body from sketch plane by distance_mm."""
+    profile = pick_biggest_profile(sketch)
+    if not profile:
+        return None
+    ext_input = component.features.extrudeFeatures.createInput(
         profile, adsk.fusion.FeatureOperations.CutFeatureOperation
     )
-    dist = adsk.core.ValueInput.createByReal(mm(distance))
+    dist = adsk.core.ValueInput.createByReal(mm(distance_mm))
     ext_input.setDistanceExtent(False, dist)
-
-    # Explicitly set participant bodies so the cut has a target
+    if target_body:
+        try:
+            ext_input.participantBodies = [target_body]
+        except Exception:
+            pass
     try:
-        if target_bodies is None:
-            body_list = []
-            for b in component.bRepBodies:
-                body_list.append(b)
-            target_bodies = body_list
-        if target_bodies:
-            ext_input.participantBodies = target_bodies
-    except Exception:
-        pass
-
-    try:
-        return extrudes.add(ext_input)
+        return component.features.extrudeFeatures.add(ext_input)
     except Exception:
         return None
 
 
-# ============================================================
-# BUILDERS
-# ============================================================
-
-def build_pillar_shell(component, params):
-    """Build a hollow pill-shaped pillar shell."""
-    sketches = component.sketches
-    xy_plane = component.xYConstructionPlane
-    sketch = sketches.add(xy_plane)
-
-    # Outer pill profile
-    draw_pill_profile(
-        sketch, 0, 0,
-        params["pillar_width"], params["pillar_depth"],
-        params["corner_radius"]
-    )
-
-    # Extrude solid
-    ext = extrude_profile(component, sketch, params["pillar_height"])
-
-    if ext is None or ext.bodies.count == 0:
-        return None
-    body = ext.bodies.item(0)
-
-    # Shell it out — remove the top face to hollow
-    try:
-        top_face = None
-        max_z = -1e9
-        for face in body.faces:
-            centroid = face.centroid
-            if centroid.z > max_z:
-                max_z = centroid.z
-                top_face = face
-
-        if top_face:
-            shells = component.features.shellFeatures
-            face_coll = adsk.core.ObjectCollection.create()
-            face_coll.add(top_face)
-            shell_input = shells.createInput(face_coll, False)
-            shell_input.insideThickness = adsk.core.ValueInput.createByReal(
-                mm(params["wall_thickness"])
-            )
-            shells.add(shell_input)
-    except Exception:
-        pass
-
-    return body
+def offset_plane(component, base_plane, offset_mm):
+    """Create a construction plane offset from base_plane by offset_mm."""
+    planes = component.constructionPlanes
+    plane_input = planes.createInput()
+    offset = adsk.core.ValueInput.createByReal(mm(offset_mm))
+    plane_input.setByOffset(base_plane, offset)
+    return planes.add(plane_input)
 
 
-def build_dome(component, params, z_offset):
-    """Build a dome cap centered on origin at height z_offset."""
-    sketches = component.sketches
-    xy_plane = component.xYConstructionPlane
-    sketch = sketches.add(xy_plane)
-
-    # Draw dome base profile (same pill shape as pillar)
-    draw_pill_profile(
-        sketch, 0, 0,
-        params["pillar_width"], params["pillar_depth"],
-        params["corner_radius"]
-    )
-
-    # Extrude thin dome slab
-    ext = extrude_profile(component, sketch, params["dome_height"])
-    if ext is None or ext.bodies.count == 0:
-        return None
-
-    body = ext.bodies.item(0)
-
-    # Move dome up to z_offset
+def move_body(component, body, dx, dy, dz):
+    """Move a body by (dx, dy, dz) mm."""
     try:
         move_feats = component.features.moveFeatures
-        body_coll = adsk.core.ObjectCollection.create()
-        body_coll.add(body)
+        coll = adsk.core.ObjectCollection.create()
+        coll.add(body)
         transform = adsk.core.Matrix3D.create()
-        transform.translation = adsk.core.Vector3D.create(0, 0, mm(z_offset))
-        move_input = move_feats.createInput(body_coll, transform)
+        transform.translation = adsk.core.Vector3D.create(mm(dx), mm(dy), mm(dz))
+        move_input = move_feats.createInput(coll, transform)
         move_feats.add(move_input)
     except Exception:
         pass
 
-    # Fillet the top edges for dome look
-    try:
-        top_edges = []
-        max_z = -1e9
-        for edge in body.edges:
-            pt = edge.pointOnEdge
-            if pt.z > max_z - 0.5:
-                if pt.z > max_z:
-                    top_edges = [edge]
-                    max_z = pt.z
-                else:
-                    top_edges.append(edge)
 
-        if top_edges:
-            fillets = component.features.filletFeatures
-            edge_coll = adsk.core.ObjectCollection.create()
-            for e in top_edges:
-                edge_coll.add(e)
-            fillet_input = fillets.createInput()
-            radius = adsk.core.ValueInput.createByReal(mm(params["dome_height"] * 0.9))
-            fillet_input.addConstantRadiusEdgeSet(edge_coll, radius, True)
-            fillets.add(fillet_input)
+def rename_body(body, name):
+    """Rename a body for easy identification in browser."""
+    try:
+        body.name = name
     except Exception:
         pass
 
-    return body
 
+# ============================================================
+# GEOMETRY BUILDERS
+# ============================================================
 
-def cut_front_panel_window(component, params, target_body=None):
-    """Cut a rectangular window on the front (Y+ face) of the pillar."""
-    sketches = component.sketches
-
-    # Create construction plane at Y = pillar_depth/2 (front face)
-    try:
-        planes = component.constructionPlanes
-        plane_input = planes.createInput()
-        offset = adsk.core.ValueInput.createByReal(mm(params["pillar_depth"] / 2))
-        plane_input.setByOffset(component.xZConstructionPlane, offset)
-        front_plane = planes.add(plane_input)
-    except Exception:
-        return
-
-    sketch = sketches.add(front_plane)
-
-    # Panel center Z from pillar top going down
-    panel_z_center = params["pillar_height"] - params["panel_center_from_top"]
-
-    draw_rectangle(
-        sketch, 0, panel_z_center,
-        params["panel_width"], params["panel_height"]
+def build_hollow_pillar(root, params, name_prefix, x_offset):
+    """
+    Build a hollow rectangular pillar by extruding outer solid then
+    cutting inner cavity. Returns the outer body.
+    """
+    # Outer solid
+    sketch = root.sketches.add(root.xYConstructionPlane)
+    draw_rect(
+        sketch, x_offset, 0,
+        params["pillar_width"], params["pillar_depth"]
     )
+    outer_ext = extrude_new_body(root, sketch, params["pillar_height"])
+    if not outer_ext or outer_ext.bodies.count == 0:
+        return None
+    outer_body = outer_ext.bodies.item(0)
+    rename_body(outer_body, name_prefix + "_Shell")
 
-    targets = [target_body] if target_body else None
-    cut_extrude(
-        component, sketch,
-        -(params["panel_recess_depth"] + params["wall_thickness"] + 1),
-        target_bodies=targets
-    )
+    # Inner cavity (cut)
+    inner_w = params["pillar_width"] - 2 * params["pillar_wall"]
+    inner_d = params["pillar_depth"] - 2 * params["pillar_wall"]
 
+    if inner_w > 10 and inner_d > 10:
+        # Cut from bottom face of pillar going up
+        # But we want to leave top wall solid for PN532 mounting on reader
+        cut_sketch = root.sketches.add(root.xYConstructionPlane)
+        draw_rect(cut_sketch, x_offset, 0, inner_w, inner_d)
+        # Cut up from Z=0 by (pillar_height - top_wall)
+        top_wall = params["pillar_wall"]
+        cut_height = params["pillar_height"] - top_wall
+        extrude_cut(root, cut_sketch, cut_height, outer_body)
 
-def cut_display_cutouts(component, params, target_body=None):
-    """Cut TFT + LCD rectangular openings on the front panel."""
-    sketches = component.sketches
-
-    try:
-        planes = component.constructionPlanes
-        plane_input = planes.createInput()
-        offset = adsk.core.ValueInput.createByReal(mm(params["pillar_depth"] / 2))
-        plane_input.setByOffset(component.xZConstructionPlane, offset)
-        front_plane = planes.add(plane_input)
-    except Exception:
-        return
-
-    panel_z_center = params["pillar_height"] - params["panel_center_from_top"]
-    targets = [target_body] if target_body else None
-
-    # TFT cutout
-    tft_sketch = sketches.add(front_plane)
-    draw_rectangle(
-        tft_sketch, 0, panel_z_center + params["tft_offset_y"],
-        params["tft_active_w"], params["tft_active_h"]
-    )
-    cut_extrude(component, tft_sketch, -(params["wall_thickness"] + 2), target_bodies=targets)
-
-    # LCD cutout
-    lcd_sketch = sketches.add(front_plane)
-    draw_rectangle(
-        lcd_sketch, 0, panel_z_center - params["lcd_offset_y"],
-        params["lcd_view_w"], params["lcd_view_h"]
-    )
-    cut_extrude(component, lcd_sketch, -(params["wall_thickness"] + 2), target_bodies=targets)
+    return outer_body
 
 
-def cut_magnet_pocket(component, params, target_body=None):
-    """Cut a magnet pocket on the lane-facing side (X- face) of receiver pillar."""
-    sketches = component.sketches
+def cut_led_groove_around_top(root, params, name_prefix, x_offset, target_body):
+    """
+    Cut a groove around all 4 sides of the pillar near the top,
+    to represent the green LED accent ring.
+    """
+    z_groove = params["pillar_height"] - params["led_z_from_top"]
+    groove_w = params["led_groove_w"]
 
-    try:
-        planes = component.constructionPlanes
-        plane_input = planes.createInput()
-        # X = -pillar_width/2 (left face when looking down Y+)
-        offset = adsk.core.ValueInput.createByReal(-mm(params["pillar_width"] / 2))
-        plane_input.setByOffset(component.yZConstructionPlane, offset)
-        side_plane = planes.add(plane_input)
-    except Exception:
-        return
+    # Front face groove (Y+)
+    front_plane = offset_plane(root, root.xZConstructionPlane, params["pillar_depth"] / 2)
+    front_sketch = root.sketches.add(front_plane)
+    # On this plane, sketch X = world X, sketch Y = world Z
+    draw_rect(front_sketch, x_offset, z_groove, params["pillar_width"] + 5, groove_w)
+    extrude_cut(root, front_sketch, -params["led_groove_d"], target_body)
 
-    sketch = sketches.add(side_plane)
-    draw_rectangle(
-        sketch, 0, params["magnet_height_from_bottom"],
-        params["magnet_size"], params["magnet_size"]
-    )
+    # Back face groove (Y-)
+    back_plane = offset_plane(root, root.xZConstructionPlane, -params["pillar_depth"] / 2)
+    back_sketch = root.sketches.add(back_plane)
+    draw_rect(back_sketch, x_offset, z_groove, params["pillar_width"] + 5, groove_w)
+    extrude_cut(root, back_sketch, params["led_groove_d"], target_body)
 
-    targets = [target_body] if target_body else None
-    cut_extrude(component, sketch, params["magnet_pocket_depth"], target_bodies=targets)
+    # Left face groove (X-)
+    left_plane = offset_plane(root, root.yZConstructionPlane, x_offset - params["pillar_width"] / 2)
+    left_sketch = root.sketches.add(left_plane)
+    # On this plane, sketch X = world Y, sketch Y = world Z
+    draw_rect(left_sketch, 0, z_groove, params["pillar_depth"] + 5, groove_w)
+    extrude_cut(root, left_sketch, params["led_groove_d"], target_body)
+
+    # Right face groove (X+)
+    right_plane = offset_plane(root, root.yZConstructionPlane, x_offset + params["pillar_width"] / 2)
+    right_sketch = root.sketches.add(right_plane)
+    draw_rect(right_sketch, 0, z_groove, params["pillar_depth"] + 5, groove_w)
+    extrude_cut(root, right_sketch, -params["led_groove_d"], target_body)
 
 
-def build_base_plate(component, params):
+def cut_pn532_pocket(root, params, x_offset, target_body):
+    """Cut PN532 reader pocket into top face of pillar."""
+    top_plane = offset_plane(root, root.xYConstructionPlane, params["pillar_height"])
+    sketch = root.sketches.add(top_plane)
+    draw_rect(sketch, x_offset, 0, params["pn532_pocket_w"], params["pn532_pocket_d"])
+    extrude_cut(root, sketch, -params["pn532_pocket_h"], target_body)
+
+
+def cut_lcd_slot(root, params, x_offset, target_body):
+    """Cut LCD rectangular slot on lane-facing side of pillar."""
+    # For left pillar (x_offset < 0), lane-facing side is X+ (right side)
+    # For right pillar (x_offset > 0), lane-facing side is X- (left side)
+    if x_offset < 0:
+        # LEFT pillar — LCD faces RIGHT (X+)
+        plane = offset_plane(root, root.yZConstructionPlane, x_offset + params["pillar_width"] / 2)
+        cut_dist = -params["pillar_wall"] * 2  # into pillar (X-)
+    else:
+        # RIGHT pillar — LCD faces LEFT (X-)
+        plane = offset_plane(root, root.yZConstructionPlane, x_offset - params["pillar_width"] / 2)
+        cut_dist = params["pillar_wall"] * 2  # into pillar (X+)
+
+    sketch = root.sketches.add(plane)
+    # On this plane, sketch X = world Y, sketch Y = world Z
+    draw_rect(sketch, 0, params["lcd_height_from_bottom"], params["lcd_view_w"], params["lcd_view_h"])
+    extrude_cut(root, sketch, cut_dist, target_body)
+
+
+def cut_servo_pockets(root, params, x_offset, target_body):
+    """Cut two servo pockets on lane-facing side of reader (left) pillar."""
+    # Lane-facing side of left pillar is X+ (right side)
+    plane = offset_plane(root, root.yZConstructionPlane, x_offset + params["pillar_width"] / 2)
+
+    # Top servo
+    top_sketch = root.sketches.add(plane)
+    draw_rect(top_sketch, 0, params["servo_top_z"], params["servo_pocket_w"], params["servo_pocket_h"])
+    extrude_cut(root, top_sketch, -params["servo_pocket_depth"], target_body)
+
+    # Bottom servo
+    bot_sketch = root.sketches.add(plane)
+    draw_rect(bot_sketch, 0, params["servo_bot_z"], params["servo_pocket_w"], params["servo_pocket_h"])
+    extrude_cut(root, bot_sketch, -params["servo_pocket_depth"], target_body)
+
+
+def cut_magnet_pocket(root, params, x_offset, target_body):
+    """Cut magnet catch pocket on lane-facing side of receiver (right) pillar."""
+    # Lane-facing side of right pillar is X-
+    plane = offset_plane(root, root.yZConstructionPlane, x_offset - params["pillar_width"] / 2)
+    sketch = root.sketches.add(plane)
+    draw_rect(sketch, 0, params["magnet_pocket_z"], params["magnet_pocket_size"], params["magnet_pocket_size"])
+    extrude_cut(root, sketch, params["magnet_pocket_depth"], target_body)
+
+
+def build_display_housing(root, params, x_offset):
+    """Build the black display housing box on TOP of the reader pillar."""
+    top_plane = offset_plane(root, root.xYConstructionPlane, params["pillar_height"])
+    sketch = root.sketches.add(top_plane)
+    draw_rect(sketch, x_offset, 0, params["display_housing_w"], params["display_housing_d"])
+    ext = extrude_new_body(root, sketch, params["display_housing_h"])
+    if ext and ext.bodies.count > 0:
+        rename_body(ext.bodies.item(0), "Display_Housing_Top")
+        return ext.bodies.item(0)
+    return None
+
+
+def build_base_plate(root, params, x_offset, name):
     """Build a base plate below the pillar."""
-    sketches = component.sketches
-    xy_plane = component.xYConstructionPlane
-    sketch = sketches.add(xy_plane)
-
-    margin = params["base_plate_margin"]
-    draw_pill_profile(
-        sketch, 0, 0,
-        params["pillar_width"] + 2*margin,
-        params["pillar_depth"] + 2*margin,
-        params["corner_radius"] + margin
+    sketch = root.sketches.add(root.xYConstructionPlane)
+    m = params["base_plate_margin"]
+    draw_rect(
+        sketch, x_offset, 0,
+        params["pillar_width"] + 2*m,
+        params["pillar_depth"] + 2*m
     )
-
-    ext = extrude_profile(component, sketch, -params["base_plate_thickness"])
-    return ext
-
-
-def build_door(component, params):
-    """Build the swing door panel + servo coupler."""
-    sketches = component.sketches
-
-    # Door panel (thin plate)
-    xy = component.xYConstructionPlane
-
-    # Coupler cube first — becomes the mount point
-    coupler_sketch = sketches.add(xy)
-    draw_rectangle(
-        coupler_sketch, 0, 0,
-        params["coupler_size"], params["coupler_size"]
-    )
-    extrude_profile(component, coupler_sketch, params["coupler_size"])
-
-    # Door panel — extends from coupler in X+ direction
-    door_sketch = sketches.add(xy)
-    # Place door with left edge at coupler right edge
-    door_cx = params["coupler_size"] / 2 + params["door_length"] / 2
-    draw_rectangle(
-        door_sketch, door_cx, 0,
-        params["door_length"], params["door_thickness"]
-    )
-    extrude_profile(component, door_sketch, params["door_height"])
+    ext = extrude_new_body(root, sketch, -params["base_plate_thickness"])
+    if ext and ext.bodies.count > 0:
+        rename_body(ext.bodies.item(0), name)
 
 
-def position_component(occurrence, dx, dy, dz):
-    """Move a component occurrence by (dx, dy, dz) in mm."""
-    try:
-        transform = adsk.core.Matrix3D.create()
-        transform.translation = adsk.core.Vector3D.create(mm(dx), mm(dy), mm(dz))
-        occurrence.transform = transform
+def build_door_panel(root, params, hinge_x, hinge_z):
+    """
+    Build the clear plastic door panel.
+    Door hangs from hinge_x on the LEFT pillar's inner (right) face,
+    extending in the +X direction across the lane.
+    """
+    # Door panel — extruded from XZ plane, in +Y direction (5mm thick)
+    # But actually easier: sketch on XZ plane, thickness in Y direction
+    xz_plane = root.xZConstructionPlane
+    sketch = root.sketches.add(xz_plane)
 
-        # Also snapshot the transform to fix it in place
-        try:
-            adsk.core.Application.get().activeProduct.snapshots.add()
-        except Exception:
-            pass
-    except Exception:
-        pass
+    # Door bottom-left corner at (hinge_x, hinge_z)
+    # Door extends +X by door_width, +Z by door_height
+    # Center of rectangle:
+    cx = hinge_x + params["door_width"] / 2
+    cz = hinge_z + params["door_height"] / 2
+
+    # On xZConstructionPlane, sketch X = world X, sketch Y = world Z
+    draw_rect(sketch, cx, cz, params["door_width"], params["door_height"])
+
+    # Extrude in -Y direction by door_thickness (so door sits at Y=0 plane centered)
+    ext = extrude_new_body(root, sketch, -params["door_thickness"])
+    if not ext or ext.bodies.count == 0:
+        return None
+    door_body = ext.bodies.item(0)
+    rename_body(door_body, "Door_Panel_Clear")
+
+    # Move door to be centered on Y=0 (half thickness up)
+    move_body(root, door_body, 0, params["door_thickness"] / 2, 0)
+
+    return door_body
+
+
+def build_servo_couplers(root, params, hinge_x):
+    """Build two coupler blocks attached to the door at top and bottom hinge points."""
+    xy = root.xYConstructionPlane
+
+    for z_val, name in [(params["servo_top_z"], "Top_Servo_Coupler"),
+                         (params["servo_bot_z"], "Bottom_Servo_Coupler")]:
+        sketch = root.sketches.add(xy)
+        cs = params["coupler_size"]
+        # Coupler positioned at hinge_x (inner edge of door), on the pillar side
+        # Centered on Y=0
+        draw_rect(sketch, hinge_x - cs / 2, 0, cs, cs)
+        ext = extrude_new_body(root, sketch, cs)
+        if ext and ext.bodies.count > 0:
+            body = ext.bodies.item(0)
+            rename_body(body, name)
+            # Move up to z_val
+            move_body(root, body, 0, 0, z_val - cs / 2)
 
 
 # ============================================================
@@ -525,55 +476,60 @@ def run(context):
         if not product:
             if ui:
                 ui.messageBox(
-                    "Please create a new Fusion Design first (File > New Design).\n"
-                    "Then re-run this script."
+                    "Please open Fusion in ASSEMBLY mode with a new empty design.\n"
+                    "File > New Design"
                 )
             return
 
         design = adsk.fusion.Design.cast(product)
         if not design:
             if ui:
-                ui.messageBox("Active product is not a Fusion Design. Please open a Design.")
+                ui.messageBox("Active product is not a Fusion Design. Open a Design in Assembly mode.")
             return
 
         design.designType = adsk.fusion.DesignTypes.ParametricDesignType
 
-        # Build parameters (mm float values)
         create_user_params(design)
         params = {name: value for name, value, unit, comment in PARAMS}
 
-        root_comp = design.rootComponent
+        root = design.rootComponent
 
-        # === Reader Pillar ===
-        reader_occ = create_component(root_comp.occurrences, "Reader_Pillar")
-        reader = reader_occ.component
-        reader_shell_body = build_pillar_shell(reader, params)
-        build_dome(reader, params, params["pillar_height"])
-        cut_front_panel_window(reader, params, target_body=reader_shell_body)
-        cut_display_cutouts(reader, params, target_body=reader_shell_body)
-        build_base_plate(reader, params)
+        # Compute pillar X offsets
+        # Total lane width = lane_gap between inner faces
+        # Left pillar right edge is at -lane_gap/2, so left pillar center X = -lane_gap/2 - pillar_width/2
+        left_x = -(params["lane_gap"] / 2 + params["pillar_width"] / 2)
+        right_x = params["lane_gap"] / 2 + params["pillar_width"] / 2
 
-        # === Receiver Pillar ===
-        receiver_occ = create_component(root_comp.occurrences, "Receiver_Pillar")
-        receiver = receiver_occ.component
-        receiver_shell_body = build_pillar_shell(receiver, params)
-        build_dome(receiver, params, params["pillar_height"])
-        cut_magnet_pocket(receiver, params, target_body=receiver_shell_body)
-        build_base_plate(receiver, params)
+        # === LEFT (Reader) Pillar ===
+        left_body = build_hollow_pillar(root, params, "Reader", left_x)
+        if left_body:
+            cut_pn532_pocket(root, params, left_x, left_body)
+            cut_lcd_slot(root, params, left_x, left_body)
+            cut_servo_pockets(root, params, left_x, left_body)
+            cut_led_groove_around_top(root, params, "Reader", left_x, left_body)
 
-        # === Door Assembly ===
-        door_occ = create_component(root_comp.occurrences, "Door_Assembly")
-        build_door(door_occ.component, params)
+        # === RIGHT (Receiver) Pillar ===
+        right_body = build_hollow_pillar(root, params, "Receiver", right_x)
+        if right_body:
+            cut_lcd_slot(root, params, right_x, right_body)
+            cut_magnet_pocket(root, params, right_x, right_body)
+            cut_led_groove_around_top(root, params, "Receiver", right_x, right_body)
 
-        # === Position pillars ===
-        half_span = (params["assembly_total_width"] - params["pillar_width"]) / 2
-        position_component(reader_occ, -half_span, 0, 0)
-        position_component(receiver_occ, half_span, 0, 0)
+        # === Display Housing on top of Reader ===
+        build_display_housing(root, params, left_x)
 
-        # Position door at receiver pillar height, extending into the lane
-        door_x = half_span - params["pillar_width"] / 2 - params["coupler_size"] / 2
-        door_z = params["door_height_from_bottom"]
-        position_component(door_occ, door_x, 0, door_z)
+        # === Base Plates ===
+        build_base_plate(root, params, left_x, "Reader_Base_Plate")
+        build_base_plate(root, params, right_x, "Receiver_Base_Plate")
+
+        # === Door Panel (clear plastic) ===
+        # Hinge point: right side of left pillar (X = left_x + pillar_width/2)
+        hinge_x = left_x + params["pillar_width"] / 2
+        hinge_z = params["door_z_from_bottom"]
+        build_door_panel(root, params, hinge_x, hinge_z)
+
+        # === Servo Couplers ===
+        build_servo_couplers(root, params, hinge_x)
 
         # Fit view
         try:
@@ -582,16 +538,25 @@ def run(context):
             pass
 
         ui.messageBox(
-            "RFID Gate model built successfully!\n\n"
-            "What was created:\n"
-            "  - Reader_Pillar with front panel window + TFT/LCD cutouts\n"
-            "  - Receiver_Pillar with magnet pocket for door latch\n"
-            "  - Door_Assembly with servo coupler + swing panel\n"
-            "  - Editable user parameters (Modify > Change Parameters)\n\n"
+            "RFID Gate model built!\n\n"
+            "What was created (all in root component):\n"
+            "  - Reader_Shell (left pillar, hollow) with:\n"
+            "      * PN532 pocket on top\n"
+            "      * LCD slot on lane-facing side\n"
+            "      * 2 servo pockets (top + bottom)\n"
+            "      * LED groove around top\n"
+            "  - Receiver_Shell (right pillar, hollow) with:\n"
+            "      * LCD slot on lane-facing side\n"
+            "      * Magnet pocket for door catch\n"
+            "      * LED groove around top\n"
+            "  - Display_Housing_Top on reader pillar\n"
+            "  - Door_Panel_Clear (spans lane, hinged left)\n"
+            "  - Top_Servo_Coupler + Bottom_Servo_Coupler\n"
+            "  - Reader_Base_Plate + Receiver_Base_Plate\n\n"
             "Next steps:\n"
-            "  - Adjust parameters to taste\n"
-            "  - Switch to Render workspace for portfolio images\n"
-            "  - Export STL for 3D printing OR use dimensions to build in wood"
+            "  - Modify > Change Parameters to tweak dimensions\n"
+            "  - Right-click bodies to assign appearances (silver, black, clear)\n"
+            "  - Render workspace for portfolio images"
         )
 
     except Exception:
