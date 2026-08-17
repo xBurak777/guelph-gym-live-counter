@@ -42,7 +42,7 @@ export default function NRGZonePage() {
           <SectionHeader eyebrow="Access" title="Membership required" />
           <div className="mt-8">
             <Callout title="Included with NRG Plus">
-              NRG Plus members can access the NRG Zone during posted hours. See the printed weekly schedule at the Zone entrance for current Women's-Only, LGBTQ2IA+, Staff/Faculty/Grad and Open hours, which are updated at the start of every semester and posted on-site.
+              NRG Plus members can access the NRG Zone during posted hours. See the printed weekly schedule at the Zone entrance for current Women&apos;s-Only, LGBTQ2IA+, Staff/Faculty/Grad and Open hours, which are updated at the start of every semester and posted on-site.
             </Callout>
           </div>
         </div>

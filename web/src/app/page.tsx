@@ -3,7 +3,7 @@ import Link from "next/link";
 import PageShell from "@/components/PageShell";
 import LiveCounter from "@/components/LiveCounter";
 import ValuedMembersSlider from "@/components/ValuedMembersSlider";
-import { InfoCard, Section, SectionHeader, CTAButton, StatGrid } from "@/components/ui";
+import { Section, SectionHeader, CTAButton } from "@/components/ui";
 import { computeOccupancy } from "@/lib/occupancy";
 import { FEATURED_STAFF } from "@/data/staff";
 

@@ -99,7 +99,7 @@ export default function PassesPage() {
 
       <Section className="pt-0">
         <Callout title="First-time visiting? Bring these.">
-          Government photo ID (student card, driver's licence, or passport), clean non-marking
+          Government photo ID (student card, driver&apos;s licence, or passport), clean non-marking
           athletic shoes, and appropriate athletic clothing. Locker rentals available at Client
           Services.
         </Callout>

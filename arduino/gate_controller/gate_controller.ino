@@ -1,352 +1,832 @@
-/*
- * =====================================================================
- * Guelph Fit & Rec — RFID Gate Controller
- * =====================================================================
- *
- * Target: ESP32 DevKit V1 (ELEGOO 38-pin variant, USB-C)
- *
- * Peripherals:
- *   - HiLetgo PN532 NFC RFID module V3 (I2C mode)
- *   - DIYmalls 2.8" ILI9341 SPI TFT (no touch used here)
- *   - Elegoo 16x2 I2C LCD (address 0x27, HD44780 with PCF8574)
- *   - 2x SG90 servos (top + bottom door pivots)
- *   - Power LED + green/red status LEDs (optional)
- *
- * Flow:
- *   1. Boot -> connect to WiFi (WiFiManager captive portal if no saved creds)
- *   2. LCD shows "Tap your card"
- *   3. On PN532 read -> POST to /api/scan on the Vercel site
- *   4. Parse JSON response:
- *        ok=true  -> GREEN state: TFT green check, LCD "Welcome <name>",
- *                    servos rotate 90 (door opens), wait 3s, servos return
- *        ok=false -> RED state: TFT red X, LCD shows denial message,
- *                    hold 2s, then back to idle
- *   5. Return to idle
- *
- * Wire pins are defined in `config.h`. Nothing hardcoded here.
- * =====================================================================
- */
-
-#include <Arduino.h>
-#include <WiFi.h>
-#include <WiFiManager.h>          // tzapu/WiFiManager
-#include <HTTPClient.h>
-#include <ArduinoJson.h>          // bblanchon/ArduinoJson
 #include <Wire.h>
+#include <SPI.h>
+#include <string.h>
+#include <pgmspace.h>
 
-// PN532 RFID
-#include <Adafruit_PN532.h>       // Adafruit PN532
+#include <Adafruit_PN532.h>
+#include <LiquidCrystal.h>
 
-// LCD 16x2 I2C
-#include <LiquidCrystal_I2C.h>    // marcoschwartz/LiquidCrystal_I2C
-
-// TFT ILI9341
-#include <Adafruit_GFX.h>         // Adafruit GFX Library
-#include <Adafruit_ILI9341.h>     // Adafruit ILI9341
-
-// Servos
-#include <ESP32Servo.h>           // madhephaestus/ESP32Servo
+#include <Adafruit_GFX.h>
+#include <Adafruit_ILI9341.h>
+#include <ESP32Servo.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+#include <ArduinoJson.h>
 
 #include "config.h"
 
-// =====================================================================
-// GLOBAL OBJECTS
-// =====================================================================
 
-Adafruit_PN532 nfc(PN532_IRQ_PIN, PN532_RESET_PIN);          // I2C: (irq, reset); Wire object used
-LiquidCrystal_I2C lcd(LCD_I2C_ADDR, LCD_COLS, LCD_ROWS);
-Adafruit_ILI9341 tft(TFT_CS_PIN, TFT_DC_PIN, TFT_RST_PIN);
-Servo servoTop;
-Servo servoBottom;
-WiFiManager wifiManager;
+// =====================================================
+// REAL GUELPH GRYPHONS LOGO
+// Embedded directly in this sketch. No extra .h file.
+// =====================================================
 
-// Debounce / state
-enum State { STATE_IDLE, STATE_SCANNING, STATE_SUCCESS, STATE_DENIED, STATE_ERROR };
-State state = STATE_IDLE;
-unsigned long stateEnteredMs = 0;
-String lastCardUid = "";
-unsigned long lastScanMs = 0;
+#define GUELPH_LOGO_SMALL_WIDTH 44
+#define GUELPH_LOGO_SMALL_HEIGHT 44
+const uint16_t guelph_logo_small[GUELPH_LOGO_SMALL_WIDTH * GUELPH_LOGO_SMALL_HEIGHT] PROGMEM = {
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xF7BE, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xFFDF, 0xFFFF, 0xF7BE, 0xF79E,
+0xF79E, 0xFFFF, 0xFFFF, 0xFFDF, 0xF79E, 0xF79E, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xFFFF, 0xF7BE, 0xFFFF, 0xF7BE, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xFFDF, 0xDEFB, 0xC638, 0xF7DE, 0xFFFF, 0xFFDF, 0x632C, 0x9CD3, 0xE71C,
+0xFFFF, 0xFFFF, 0xFFFF, 0xFFDF, 0xF7BE, 0xF79E, 0xF79E, 0xFFDE, 0xD69A, 0xF79D, 0xD6BA, 0xFFDF,
+0xFFDF, 0xEF9E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xFFFF,
+0xAD75, 0x0820, 0x39A7, 0x634C, 0x73AE, 0x0000, 0x0000, 0x08A2, 0x4A69, 0x8C51, 0xBE18, 0xEF5D,
+0xFFFF, 0xFFFF, 0xFFFF, 0xEF5D, 0x3125, 0x39A6, 0x1082, 0x5AEB, 0xEF7D, 0xFFFF, 0xF79E, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xFFDF, 0xDEFB, 0x1062, 0x58C4, 0x78E4,
+0x58A3, 0x50E4, 0x38A2, 0x2021, 0x0800, 0x0000, 0x0000, 0x18C3, 0x3A28, 0x73CF, 0xD69A, 0xF77D,
+0x1882, 0x7125, 0x7124, 0x3041, 0x3945, 0xA555, 0xFFFF, 0xF7BE, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xFFFF, 0x94B2, 0x1861, 0x7125, 0x9146, 0xA146, 0xA987, 0xB1A8,
+0xA9A8, 0xA1C7, 0xA187, 0x8925, 0x60C4, 0x3021, 0x0840, 0xAD55, 0x8430, 0x4062, 0xC9E8, 0x91A6,
+0x7105, 0x2821, 0x6B6E, 0xFFDF, 0xFFDF, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF79E, 0xFFFF, 0x5B0C, 0x1881, 0x93A9, 0x8306, 0x7A65, 0x71E5, 0x79A4, 0x7964, 0x7924, 0x8146,
+0x9966, 0xC1E9, 0x7905, 0x18A2, 0x630C, 0x1820, 0xB187, 0x7925, 0x6AAB, 0x5185, 0x5224, 0x62EB,
+0xE73D, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xF7BF, 0xE71C, 0x2945,
+0x41A3, 0x93C8, 0x93E8, 0x5A65, 0x7B47, 0xA448, 0x6B06, 0x1000, 0x7124, 0xA146, 0xD9E9, 0x4062,
+0x2800, 0xA167, 0xD1A8, 0xA186, 0x1861, 0x5204, 0xD5CC, 0x3982, 0xB5B7, 0xFFFF, 0xF79E, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xFFFF, 0xB597, 0x20C2, 0x8369, 0x93C8, 0x8BA8,
+0x6286, 0x7B06, 0x8BA8, 0x3983, 0x3882, 0x8945, 0xD1C8, 0x9125, 0x8945, 0xE1E9, 0xD1A8, 0xB987,
+0x2041, 0x7BAE, 0x41E7, 0x736E, 0xFFDF, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF79E, 0xFFDF, 0xEF7D, 0x29A6, 0x1081, 0x59E4, 0x7AA6, 0x49C4, 0x5205, 0x8387, 0x72C6,
+0x1821, 0x68E3, 0xB966, 0xD1A8, 0xC9C7, 0xC9A7, 0xD187, 0xD1E9, 0x3862, 0xD699, 0xF7BE, 0xF79E,
+0xF7DE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xFFFF, 0xCE99, 0x2945,
+0x48C3, 0x9166, 0xA146, 0xA126, 0x9946, 0x90E5, 0x80E4, 0x8905, 0x9966, 0xA967, 0xC9A8, 0xD1A8,
+0xD1A8, 0xD1A7, 0xD187, 0xD9E8, 0x5883, 0x5AEB, 0xFFFF, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xFFDF, 0xDEDB, 0x18E3, 0x1800, 0xA9A8, 0xE1C8, 0xD9C8, 0xD1C8,
+0xD9C8, 0xC9A7, 0xD9C8, 0xD9C9, 0xB986, 0xA166, 0xB9A7, 0xD1A7, 0xD1A7, 0xD1A8, 0xC9A7, 0xC9C8,
+0x3841, 0x2965, 0xEF7D, 0xF7BE, 0xF79F, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF79E, 0x39C7, 0x0000, 0x0040, 0x60C3, 0xD9C8, 0xD188, 0xC9A7, 0xC1A8, 0x3861, 0xA187, 0xDA29,
+0xB187, 0x2020, 0x48A2, 0xD1C8, 0xD1A8, 0xB9A8, 0x70E3, 0xA9C9, 0x0000, 0x94D3, 0xFFFF, 0xF79E,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xF79E, 0xF79E, 0xFFFF, 0x632C, 0x0000, 0x632C, 0x4A28,
+0x70C4, 0xD9E9, 0xC987, 0xD9E8, 0x8946, 0x0000, 0x2841, 0x4861, 0x8125, 0x60E4, 0x2020, 0xC1C8,
+0xD9C9, 0x9966, 0x2041, 0x3883, 0x0000, 0x4A8A, 0xFFFF, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xFFDF,
+0xFFFF, 0xFFFF, 0xFFFF, 0x8430, 0x0000, 0x4A49, 0xD6BA, 0x18A2, 0xA166, 0xE1C9, 0xD9E9, 0x9966,
+0x1820, 0x0000, 0x0000, 0x634D, 0x5269, 0x3965, 0x1861, 0x9966, 0xE209, 0x68C4, 0x0882, 0x2986,
+0x0000, 0x0841, 0xCE59, 0xFFFF, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xFFDF, 0xE71C, 0xA514, 0xB5B7, 0x632C, 0x0000,
+0x2104, 0xBDF8, 0x31C6, 0x58A4, 0xCA09, 0xA166, 0x60C4, 0x1000, 0x0000, 0x0000, 0x738E, 0xFFFF,
+0xFFFF, 0xDEDB, 0x4249, 0x5062, 0xCA29, 0x3021, 0xAD96, 0xDEBA, 0x18E3, 0x0000, 0x4208, 0xF7BE,
+0xFFDF, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF79E, 0xFFFF, 0xC618, 0x0020, 0x4A65, 0x18A0, 0x0021, 0xCE39, 0x8450, 0x0000, 0x38A3,
+0x2020, 0x20C2, 0x2124, 0x0000, 0x0000, 0x73AE, 0xFFDF, 0xF77E, 0xFFFF, 0xB596, 0x0000, 0x7105,
+0x9166, 0x3165, 0xEF7E, 0xFFFF, 0xD69A, 0x1082, 0x0000, 0x4A69, 0xE71C, 0xFFDF, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BF, 0xEF5D,
+0x39E7, 0x4205, 0x31A6, 0xB596, 0xFFFF, 0x8C51, 0x0000, 0x0000, 0x7BF0, 0xE71C, 0x41E8, 0x0000,
+0x5AEC, 0xFFFF, 0xF79E, 0xF7BE, 0xF79E, 0xFFDF, 0x7BCF, 0x40C4, 0x2041, 0x632C, 0xFFFF, 0xF7BE,
+0xCE7A, 0x3186, 0x5ACB, 0x0000, 0x18C3, 0xDEFC, 0xFFDF, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xFFDF, 0xE73C, 0xB597, 0xE73D, 0xFFFF,
+0xFFFF, 0xA4F3, 0x0000, 0x2104, 0xF79E, 0xFFFF, 0x5ACB, 0x0000, 0x5AEB, 0xFFDF, 0xF7BF, 0xF79E,
+0xF79E, 0xF7BE, 0xFFFF, 0x52AA, 0x0000, 0x5ACB, 0xFFFF, 0xFFDF, 0xDEFB, 0xDEFB, 0xF7BE, 0x4208,
+0x4228, 0xDEFB, 0xFFDF, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xF7BF, 0xFFFF, 0xF7BE, 0xEF7E, 0xFFFF, 0xA534, 0x0000, 0x0000,
+0x31C6, 0xF7BE, 0x8430, 0x0000, 0x0000, 0x31A6, 0xEF5D, 0xF7BF, 0xF79E, 0xF7BF, 0x7BEF, 0x0000,
+0x0000, 0x0000, 0x3186, 0xDEFB, 0xFFFF, 0xFFDF, 0xEF7D, 0xE73C, 0xF79E, 0xF7BF, 0xF79E, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E,
+0xF79E, 0xF79E, 0xF7BF, 0xF7BE, 0xFFDF, 0xDEDB, 0x8C51, 0x8C51, 0x8C51, 0xEF7D, 0xC639, 0x8431,
+0x8C71, 0x8C51, 0xE73D, 0xF7BF, 0xF7BF, 0xEF5D, 0x8430, 0x8C51, 0x8C71, 0x3186, 0x39C7, 0xD6BA,
+0xFFDF, 0xEF7E, 0xF7BE, 0xF7BF, 0xF7BE, 0xF7BE, 0xF79E, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xFFFF, 0xF7BE, 0xF79E, 0xF79E, 0xF79E,
+0xF79E, 0xFFDF, 0xFFFF, 0xFFFF, 0xFFFF, 0xF7BF, 0xFFDF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFDF, 0xF7BE,
+0xF7BF, 0xF7BF, 0xFFFF, 0xFFFF, 0xFFFF, 0xEF5D, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFFF, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF79E, 0xF7BF, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF79E, 0xFFFF, 0x8C72, 0x2125, 0x2124, 0x18C3, 0x5ACB, 0xF7BF, 0x4208, 0x6B4D, 0xFFDF,
+0x7BF0, 0x39E7, 0xE71C, 0x52AB, 0x2965, 0x3186, 0x3186, 0xCE79, 0x632D, 0x630C, 0xF7BF, 0xF7BE,
+0x738E, 0x3186, 0x31A6, 0x2965, 0x2965, 0x8C71, 0xE71C, 0x3186, 0xA514, 0xFFFF, 0x4A69, 0x632C,
+0xFFFF, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xFFDF, 0x2945,
+0x2124, 0xA514, 0x9CF3, 0xCE59, 0xFFDF, 0x0861, 0x4228, 0xFFFF, 0x5AEB, 0x0000, 0xDEFB, 0x2104,
+0x31A6, 0xA534, 0x9CD3, 0xEF5D, 0x31A6, 0x31A6, 0xFFFF, 0xF79E, 0xE73C, 0x2945, 0x18C3, 0xBDF7,
+0x5ACB, 0x1082, 0xC638, 0x0000, 0x7BCF, 0xF79E, 0x10A2, 0x39C7, 0xFFFF, 0xF79E, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xFFDF, 0x2945, 0x5AEB, 0xDEDB, 0x5AEB, 0x738E,
+0xE71C, 0x18E3, 0x528A, 0xFFFF, 0x6B4D, 0x0861, 0xDEFB, 0x3186, 0x1082, 0x2945, 0x8C71, 0xFFFF,
+0x39A7, 0x4208, 0xFFFF, 0xF7BE, 0xFFFF, 0x528A, 0x18E3, 0xB596, 0x528A, 0x10A2, 0xC618, 0x1082,
+0x0841, 0x10A2, 0x0000, 0x4A69, 0xFFFF, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xFFDF, 0x2945, 0x4229, 0xE73C, 0x52AA, 0x0021, 0xDEDB, 0x18C3, 0x4208, 0xE73C,
+0x52AA, 0x0021, 0xDEFC, 0x2945, 0x4208, 0xB5B7, 0xC5F8, 0xFFDF, 0x39C7, 0x31A6, 0xE71C, 0xDEDB,
+0xFFBF, 0x526A, 0x0020, 0x31A6, 0x3186, 0x9492, 0xDEDB, 0x0020, 0x5ACB, 0xAD55, 0x10A2, 0x4228,
+0xFFFF, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xFFFF, 0x5AEB,
+0x0000, 0x18E3, 0x10A2, 0x0861, 0xE73C, 0x526A, 0x0000, 0x1082, 0x0000, 0x3A07, 0xEF7D, 0x2965,
+0x0881, 0x2965, 0x2104, 0xCE59, 0x5269, 0x0000, 0x18C3, 0x1082, 0xCE39, 0x5269, 0x2965, 0xFFFF,
+0xFFBF, 0xFFFF, 0xD6BB, 0x0000, 0x8C71, 0xFFFF, 0x18C3, 0x39C7, 0xFFFF, 0xF79E, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xF7BF, 0xEF5D, 0xB5B6, 0xB596, 0xC639, 0xA555,
+0xF75E, 0xEF7D, 0xBDF7, 0xB5B7, 0xBDF7, 0xEF5D, 0xFFDF, 0xD6BA, 0xC659, 0xC659, 0xCE39, 0xEF7E,
+0xDEDB, 0xCE39, 0xCE59, 0xC619, 0xEFBE, 0xD6DB, 0xCE7A, 0xF7DF, 0xF79E, 0xF7BF, 0xF75E, 0xBDF8,
+0xDEFC, 0xF7BF, 0xBDD7, 0xC638, 0xF7BF, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF79E, 0xF7BF, 0xFFFF, 0xFFFF, 0xFF1C, 0xFEFC, 0xFF7E, 0xF73D, 0xFEFB, 0xFFBF,
+0xFF9F, 0xFF7E, 0xFF7E, 0xFF5D, 0xFF7E, 0xFEDB, 0xFF9E, 0xFF7E, 0xF77E, 0xFFBF, 0xFF7E, 0xFFDF,
+0xF69A, 0xFEFC, 0xFFDF, 0xF71C, 0xFF9E, 0xF71C, 0xFFBE, 0xFF7D, 0xF6BB, 0xF75D, 0xFFFF, 0xFFFF,
+0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E,
+0xFFDF, 0xD492, 0xC2CD, 0xCC11, 0xF71B, 0xCBCF, 0xCB6F, 0xCBD0, 0xDD35, 0xD411, 0xD472, 0xDCD4,
+0xDC52, 0xC34E, 0xCBF0, 0xE515, 0xD3F1, 0xDCD4, 0xD472, 0xDCD3, 0xCB4E, 0xC32D, 0xEE18, 0xCB2D,
+0xE493, 0xCC32, 0xE5D7, 0xC2AB, 0xCBB0, 0xEE9B, 0xF7DF, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xFFFF, 0xCBAF, 0xE535, 0xDC93,
+0xEDF9, 0xCBAE, 0xD36E, 0xCB0D, 0xF73D, 0xD32E, 0xC26A, 0xFF5E, 0xD3CF, 0xCB6F, 0xCB8F, 0xE4F4,
+0xCA2A, 0xCA2B, 0xE432, 0xCBD0, 0xEE39, 0xDC72, 0xE4F5, 0xD34D, 0xD1E9, 0xCB0D, 0xEE59, 0xD390,
+0xD34E, 0xE576, 0xFFFF, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xFFFF, 0xD4B2, 0xCB2E, 0xC28B, 0xED36, 0xD452, 0xD411, 0xCB8F,
+0xFFFF, 0xDD15, 0xD430, 0xFFFF, 0xD3F0, 0xDCB3, 0xF73D, 0xE596, 0xD411, 0xDD14, 0xD491, 0xDCF5,
+0xC34E, 0xC34D, 0xEDF8, 0xCC32, 0xDCB3, 0xC30C, 0xF6FC, 0xD473, 0xC28B, 0xDCF4, 0xFFFF, 0xF79E,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BF, 0xFF5E, 0xEE7A, 0xF69A, 0xF73C, 0xF73D, 0xFFBF, 0xF73D, 0xF77E, 0xF77D, 0xF73D, 0xF7BE,
+0xF75C, 0xFFBE, 0xFFDF, 0xFF5E, 0xF75D, 0xFF5D, 0xF75D, 0xF79E, 0xEE7A, 0xF6DC, 0xFFBE, 0xF73D,
+0xFF9E, 0xF73C, 0xF75D, 0xEE9A, 0xF6DB, 0xFF9E, 0xF7BE, 0xFF9E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xF7BF, 0xF7FF, 0xFFDF,
+0xF7BF, 0xF7BF, 0xF7BF, 0xF7DE, 0xF7BE, 0xF7BE, 0xF7DE, 0xFF9E, 0xF7DE, 0xF7BE, 0xF7BE, 0xF7BF,
+0xF7DE, 0xF7BF, 0xFFBF, 0xF7BE, 0xFFFF, 0xF7DF, 0xF7BE, 0xF7BF, 0xF7BE, 0xFFBF, 0xF7BE, 0xFFFF,
+0xF7DF, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xF7BE, 0xF79E, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF79E, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF79E, 0xF79E, 0xF79E, 0xF79E, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE,
+0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xF7BE, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF,
+0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF,
+0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF,
+0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF,
+0xFFDF, 0xFFDF, 0xFFDF, 0xFFDF
+};
 
-// =====================================================================
-// SETUP
-// =====================================================================
 
-void setup() {
-  Serial.begin(115200);
-  delay(200);
-  Serial.println();
-  Serial.println("=====================================");
-  Serial.println("Guelph Fit & Rec Gate Controller v1.0");
-  Serial.println("=====================================");
+// =====================================================
+// IR REMOTE
+// =====================================================
 
-  // I2C bus for PN532 + LCD
-  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-  Wire.setClock(100000);  // PN532 prefers 100kHz standard
+#define IR_RECEIVE_PIN 34
 
-  // --- Init LCD 16x2 ---
-  lcd.init();
-  lcd.backlight();
-  lcdShow("Booting...", "Please wait");
+#include <TinyIRReceiver.hpp>
 
-  // --- Init TFT ---
-  tft.begin();
-  tft.setRotation(0);   // portrait, USB down; change to 2 if flipped
-  tft.fillScreen(ILI9341_BLACK);
-  tftMessage("Booting", "Initializing...", ILI9341_WHITE);
+#define POWER_COMMAND 0x45
 
-  // --- Init PN532 ---
-  nfc.begin();
-  uint32_t versiondata = nfc.getFirmwareVersion();
-  if (!versiondata) {
-    Serial.println("PN532 not found! Check wiring.");
-    lcdShow("PN532 error", "Check wiring");
-    tftMessage("HW ERROR", "PN532 not found", ILI9341_RED);
-    state = STATE_ERROR;
-    // Continue — WiFi still works; user sees error on displays.
-  } else {
-    Serial.print("Found PN532, firmware version: 0x");
-    Serial.println(versiondata, HEX);
-    nfc.SAMConfig();   // configure to read RFID tags
+
+// =====================================================
+// PN532
+// =====================================================
+
+#define PN532_SDA 21
+#define PN532_SCL 22
+
+#define PN532_IRQ   35
+#define PN532_RESET 13
+
+Adafruit_PN532 nfc(
+  PN532_IRQ,
+  PN532_RESET,
+  &Wire
+);
+
+
+// =====================================================
+// LCD1602
+// =====================================================
+
+#define LCD_RS 16
+#define LCD_EN 19
+#define LCD_D4 4
+#define LCD_D5 5
+#define LCD_D6 2
+#define LCD_D7 15
+
+LiquidCrystal lcd(
+  LCD_RS,
+  LCD_EN,
+  LCD_D4,
+  LCD_D5,
+  LCD_D6,
+  LCD_D7
+);
+
+// Custom smiling-face character for the 16x2 LCD.
+// Stored in CGRAM slot 0.
+byte lcdSmiley[8] = {
+  B00000,
+  B01010,
+  B01010,
+  B00000,
+  B10001,
+  B01110,
+  B00000,
+  B00000
+};
+
+
+// =====================================================
+// TFT
+// =====================================================
+
+#define TFT_CS   32
+#define TFT_RST  33
+#define TFT_DC   27
+#define TFT_MOSI 23
+#define TFT_SCK  18
+
+SPIClass tftSPI(VSPI);
+
+Adafruit_ILI9341 tft(
+  &tftSPI,
+  TFT_DC,
+  TFT_CS,
+  TFT_RST
+);
+
+
+// =====================================================
+// CUSTOM TFT COLORS
+// =====================================================
+
+const uint16_t COLOR_BG          = 0x0841;
+const uint16_t COLOR_HEADER      = 0x8000;
+const uint16_t COLOR_HEADER_DARK = 0x5000;
+const uint16_t COLOR_PANEL       = 0x18E3;
+const uint16_t COLOR_PANEL_2     = 0x2124;
+const uint16_t COLOR_WHITE_SOFT  = 0xEF7D;
+const uint16_t COLOR_MUTED       = 0x94B2;
+const uint16_t COLOR_GOLD        = 0xFE40;
+const uint16_t COLOR_GREEN       = 0x04E0;
+const uint16_t COLOR_GREEN_DARK  = 0x02E0;
+const uint16_t COLOR_RED         = 0xE800;
+const uint16_t COLOR_RED_DARK    = 0xA800;
+const uint16_t COLOR_YELLOW      = 0xFFE0;
+const uint16_t COLOR_YELLOW_DARK = 0xD5A0;
+const uint16_t COLOR_BLUE        = 0x04DF;
+const uint16_t COLOR_BLUE_DARK   = 0x02B5;
+
+
+// =====================================================
+// GATE SERVOS
+//
+// Door A signal -> GPIO17 / TX2
+// Door B signal -> GPIO26
+//
+// Servo RED wires   -> external ~6V PSU +
+// Servo BROWN wires -> external PSU GND
+// External PSU GND  -> ESP32 common GND
+//
+// IMPORTANT: Servo +6V does NOT connect to ESP32/breadboard + rails.
+// =====================================================
+
+#define DOOR_A_SERVO_PIN 17
+#define DOOR_B_SERVO_PIN 26
+
+Servo doorA;
+Servo doorB;
+
+const int DOOR_CLOSED_ANGLE = 90;
+const int DOOR_A_OPEN_ANGLE = 0;
+const int DOOR_B_OPEN_ANGLE = 180;
+
+// Non-blocking motion. One degree every 8 ms is about 0.72 s
+// for a full 90-degree gate movement.
+const unsigned long SERVO_STEP_INTERVAL = 8;
+const unsigned long GATE_OPEN_HOLD_TIME = 8000;
+
+enum GateState {
+  GATE_CLOSED,
+  GATE_OPENING,
+  GATE_OPEN,
+  GATE_CLOSING
+};
+
+GateState gateState = GATE_CLOSED;
+
+int doorAPosition = DOOR_CLOSED_ANGLE;
+int doorBPosition = DOOR_CLOSED_ANGLE;
+
+unsigned long lastServoStepAt = 0;
+unsigned long gateOpenedAt = 0;
+
+
+// =====================================================
+// SYSTEM STATE
+// =====================================================
+
+bool systemActive = false;
+bool showingCard = false;
+bool cardLatched = false;
+
+unsigned long cardScreenStarted = 0;
+unsigned long nextRFIDPollAt = 0;
+
+uint8_t noCardStreak = 0;
+
+
+// =====================================================
+// TIMING
+// =====================================================
+
+const unsigned long CARD_SCREEN_TIME = 3500;
+const unsigned long RFID_POLL_INTERVAL = 100;
+const unsigned long RFID_REARM_DELAY = 700;
+const uint8_t NO_CARD_READS_TO_UNLOCK = 2;
+
+
+// =====================================================
+// CARD STATUS
+// =====================================================
+
+enum CardStatus {
+  STATUS_APPROVED,
+  STATUS_WARNING,
+  STATUS_DENIED,
+  STATUS_UNKNOWN
+};
+
+struct CardRecord {
+  const char* uid;
+  const char* name;
+  CardStatus status;
+  const char* message;
+};
+
+// Result returned by the website for the current physical card scan.
+// The website is the authorization + occupancy source of truth.
+struct ApiDecision {
+  bool responseReceived;
+  bool accessGranted;
+  CardStatus status;
+  char name[40];
+  char message[80];
+  char direction[4];
+  int occupancy;
+  int capacity;
+};
+
+
+// =====================================================
+// INTENTIONALLY UNKNOWN DEMO CARDS
+// =====================================================
+
+const char* forcedUnknownUIDs[] = {
+  "A4:B1:76:E7",
+  "3C:23:48:42",
+  "DC:65:0C:42"
+};
+
+const uint8_t forcedUnknownCount =
+  sizeof(forcedUnknownUIDs) / sizeof(forcedUnknownUIDs[0]);
+
+
+// =====================================================
+// CARD DATABASE
+// =====================================================
+
+const CardRecord cardDatabase[] = {
+  { "47:07:12:5E", "BURAK AKSOY",    STATUS_APPROVED, "Membership active" },
+  { "60:11:9D:5C", "FATIH AKSOY",    STATUS_APPROVED, "Membership active" },
+  { "6C:BD:1C:42", "AYLIN DEMIR",     STATUS_APPROVED, "Membership active" },
+  { "4C:AA:21:42", "SELIN ARSLAN",    STATUS_APPROVED, "Membership active" },
+  { "1C:DB:26:42", "MERT AYDIN",      STATUS_APPROVED, "Membership active" },
+  { "CC:3D:2D:42", "KEREM CELIK",     STATUS_APPROVED, "Membership active" },
+
+  { "26:8C:75:E7", "EYLUL HEPOGLU",   STATUS_WARNING,  "Membership expires in 6 days" },
+  { "3C:A2:42:42", "CAN YILDIRIM",    STATUS_WARNING,  "Membership expires in 3 days" },
+
+  { "0C:28:13:42", "ELIF SAHIN",      STATUS_DENIED,   "Membership expired" },
+  { "BC:7C:1E:42", "EMRE YILMAZ",     STATUS_DENIED,   "Access denied" },
+  { "8C:2B:20:42", "ONUR KAPLAN",     STATUS_DENIED,   "Access denied" }
+};
+
+const uint8_t cardCount =
+  sizeof(cardDatabase) / sizeof(cardDatabase[0]);
+
+const CardRecord unknownCard = {
+  "UNKNOWN",
+  "UNKNOWN MEMBER",
+  STATUS_UNKNOWN,
+  "Unknown card"
+};
+
+
+// =====================================================
+// CARD LOOKUP
+// =====================================================
+
+bool isForcedUnknownCard(const char* uid) {
+  for (uint8_t i = 0; i < forcedUnknownCount; i++) {
+    if (strcmp(uid, forcedUnknownUIDs[i]) == 0) {
+      return true;
+    }
   }
-
-  // --- Init servos ---
-  ESP32PWM::allocateTimer(0);
-  ESP32PWM::allocateTimer(1);
-  servoTop.setPeriodHertz(50);
-  servoBottom.setPeriodHertz(50);
-  servoTop.attach(SERVO_TOP_PIN, SERVO_MIN_US, SERVO_MAX_US);
-  servoBottom.attach(SERVO_BOTTOM_PIN, SERVO_MIN_US, SERVO_MAX_US);
-  doorClose();  // ensure door starts closed
-
-  // --- WiFi via WiFiManager ---
-  lcdShow("Connecting WiFi", "Portal if needed");
-  tftMessage("WiFi", "Configure via\nGuelphGymGate AP", ILI9341_YELLOW);
-
-  wifiManager.setConfigPortalTimeout(180); // 3 min timeout on portal
-  wifiManager.setConnectTimeout(30);
-
-  bool ok = wifiManager.autoConnect(WM_AP_NAME, WM_AP_PASSWORD);
-  if (!ok) {
-    Serial.println("WiFi failed. Rebooting in 5s...");
-    lcdShow("WiFi failed", "Rebooting...");
-    tftMessage("WiFi FAIL", "Rebooting...", ILI9341_RED);
-    delay(5000);
-    ESP.restart();
-  }
-  Serial.print("WiFi connected. IP: ");
-  Serial.println(WiFi.localIP());
-
-  // --- Ready ---
-  enterIdle();
+  return false;
 }
 
-// =====================================================================
-// MAIN LOOP
-// =====================================================================
-
-void loop() {
-  unsigned long now = millis();
-
-  switch (state) {
-    case STATE_IDLE:
-      pollForCard();
-      break;
-
-    case STATE_SUCCESS:
-      // After 3s of "open" state, close door and return to idle
-      if (now - stateEnteredMs > SUCCESS_HOLD_MS) {
-        doorClose();
-        enterIdle();
-      }
-      break;
-
-    case STATE_DENIED:
-      // After 2s, return to idle
-      if (now - stateEnteredMs > DENIED_HOLD_MS) {
-        enterIdle();
-      }
-      break;
-
-    case STATE_ERROR:
-      // Try to recover — if PN532 gone, this is a hardware issue.
-      // Poll every 3 seconds
-      if (now - stateEnteredMs > 3000) {
-        stateEnteredMs = now;
-        uint32_t v = nfc.getFirmwareVersion();
-        if (v) {
-          Serial.println("PN532 recovered.");
-          nfc.SAMConfig();
-          enterIdle();
-        }
-      }
-      break;
-
-    default:
-      break;
+const CardRecord* findCardByUID(const char* uid) {
+  if (isForcedUnknownCard(uid)) {
+    return &unknownCard;
   }
+
+  for (uint8_t i = 0; i < cardCount; i++) {
+    if (strcmp(uid, cardDatabase[i].uid) == 0) {
+      return &cardDatabase[i];
+    }
+  }
+
+  return &unknownCard;
 }
 
-// =====================================================================
-// STATE HELPERS
-// =====================================================================
 
-void enterIdle() {
-  state = STATE_IDLE;
-  stateEnteredMs = millis();
-  lastCardUid = "";
-  lcdShow("Tap your card", "Guelph Fit&Rec");
-  tftIdleScreen();
+// =====================================================
+// CENTERED TFT TEXT
+// =====================================================
+
+void centeredText(
+  const char *text,
+  int16_t y,
+  uint8_t size,
+  uint16_t color
+) {
+  int16_t x1;
+  int16_t y1;
+  uint16_t width;
+  uint16_t height;
+
+  tft.setTextSize(size);
+  tft.setTextColor(color);
+  tft.getTextBounds(text, 0, y, &x1, &y1, &width, &height);
+
+  int16_t x = (tft.width() - width) / 2;
+  if (x < 2) x = 2;
+
+  tft.setCursor(x, y);
+  tft.print(text);
 }
 
-void enterSuccess(const String& name, const String& direction, int occupancy, int capacity) {
-  state = STATE_SUCCESS;
-  stateEnteredMs = millis();
-  String top = (direction == "IN") ? "Welcome!" : "See you soon!";
-  String bot = String(name).substring(0, 16);
-  lcdShow(top.c_str(), bot.c_str());
-  tftSuccess(name, direction, occupancy, capacity);
-  doorOpen();
+void centeredTextOnBackground(
+  const char *text,
+  int16_t y,
+  uint8_t size,
+  uint16_t foreground,
+  uint16_t background
+) {
+  int16_t x1;
+  int16_t y1;
+  uint16_t width;
+  uint16_t height;
+
+  tft.setTextSize(size);
+  tft.setTextColor(foreground, background);
+  tft.getTextBounds(text, 0, y, &x1, &y1, &width, &height);
+
+  int16_t x = (tft.width() - width) / 2;
+  if (x < 2) x = 2;
+
+  tft.setCursor(x, y);
+  tft.print(text);
 }
 
-void enterDenied(const String& reason) {
-  state = STATE_DENIED;
-  stateEnteredMs = millis();
-  lcdShow("Access denied", reason.substring(0, 16).c_str());
-  tftDenied(reason);
+
+// =====================================================
+// REAL GUELPH LOGO HEADER
+// Only the header changed. The rest of the UI is kept.
+// =====================================================
+
+void drawBrandHeader() {
+  tft.fillRect(0, 0, 240, 94, COLOR_HEADER_DARK);
+  tft.fillRect(0, 0, 240, 5, COLOR_GOLD);
+
+  // Logo area, top-left.
+  // Original supplied Guelph Gryphons logo is 44x44 here.
+  tft.drawRGBBitmap(
+    10,
+    13,
+    guelph_logo_small,
+    GUELPH_LOGO_SMALL_WIDTH,
+    GUELPH_LOGO_SMALL_HEIGHT
+  );
+
+  // Text beside logo.
+  tft.setTextWrap(false);
+
+  tft.setTextSize(2);
+  tft.setTextColor(ILI9341_WHITE);
+  tft.setCursor(62, 20);
+  tft.print("GRYPHON");
+
+  tft.setCursor(62, 40);
+  tft.print("FIT & REC");
+
+  tft.setTextSize(1);
+  tft.setTextColor(COLOR_WHITE_SOFT);
+  tft.setCursor(62, 64);
+  tft.print("UNIVERSITY OF GUELPH");
+
+  tft.drawLine(18, 93, 222, 93, COLOR_GOLD);
 }
 
-// =====================================================================
-// RFID
-// =====================================================================
 
-void pollForCard() {
-  uint8_t uid[7] = {0};
-  uint8_t uidLen = 0;
-  bool found = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLen, 50);
-  if (!found) return;
+// =====================================================
+// MAIN INFORMATION PANEL
+// =====================================================
 
-  String uidStr = "";
-  for (uint8_t i = 0; i < uidLen; i++) {
-    if (uid[i] < 0x10) uidStr += "0";
-    uidStr += String(uid[i], HEX);
-    if (i < uidLen - 1) uidStr += ":";
-  }
-  uidStr.toUpperCase();
-
-  // Debounce: ignore same card scanned again within DEBOUNCE_MS
-  unsigned long now = millis();
-  if (uidStr == lastCardUid && (now - lastScanMs) < DEBOUNCE_MS) {
-    return;
-  }
-  lastCardUid = uidStr;
-  lastScanMs = now;
-
-  Serial.print("Card scanned: ");
-  Serial.println(uidStr);
-
-  state = STATE_SCANNING;
-  lcdShow("Verifying...", uidStr.substring(0, 16).c_str());
-  tftMessage("Scanning", "Verifying card...", ILI9341_CYAN);
-
-  postScan(uidStr);
+void drawMainPanel() {
+  tft.fillRoundRect(12, 102, 216, 205, 12, COLOR_PANEL);
+  tft.drawRoundRect(12, 102, 216, 205, 12, COLOR_MUTED);
 }
 
-// =====================================================================
-// API CALL
-// =====================================================================
 
-void postScan(const String& cardUid) {
-  if (WiFi.status() != WL_CONNECTED) {
-    enterDenied("Network offline");
-    return;
-  }
+// =====================================================
+// STATUS ICONS
+// =====================================================
 
-  HTTPClient http;
-  http.setTimeout(HTTP_TIMEOUT_MS);
-  http.begin(String(API_BASE_URL) + "/api/scan");
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Authorization", String("Bearer ") + SCAN_API_SECRET);
+void drawApprovedIcon(int cx, int cy) {
+  tft.fillCircle(cx, cy, 27, COLOR_GREEN_DARK);
+  tft.drawCircle(cx, cy, 27, COLOR_GREEN);
+  tft.drawCircle(cx, cy, 28, ILI9341_WHITE);
 
-  StaticJsonDocument<256> reqDoc;
-  reqDoc["cardUid"] = cardUid;
-  reqDoc["gateId"] = GATE_ID;
-  String reqBody;
-  serializeJson(reqDoc, reqBody);
-
-  Serial.print("POST /api/scan body: ");
-  Serial.println(reqBody);
-
-  int code = http.POST(reqBody);
-  Serial.printf("HTTP status: %d\n", code);
-
-  if (code <= 0) {
-    Serial.printf("HTTP error: %s\n", http.errorToString(code).c_str());
-    enterDenied("Network error");
-    http.end();
-    return;
-  }
-
-  String payload = http.getString();
-  http.end();
-  Serial.println("Response:");
-  Serial.println(payload);
-
-  StaticJsonDocument<1024> resDoc;
-  DeserializationError err = deserializeJson(resDoc, payload);
-  if (err) {
-    Serial.print("JSON parse failed: ");
-    Serial.println(err.c_str());
-    enterDenied("Bad response");
-    return;
-  }
-
-  bool ok = resDoc["ok"] | false;
-
-  if (ok) {
-    String firstName = resDoc["member"]["firstName"] | "Member";
-    String direction = resDoc["direction"] | "IN";
-    int occupancy = resDoc["occupancy"] | 0;
-    int capacity = resDoc["capacity"] | 350;
-    enterSuccess(firstName, direction, occupancy, capacity);
-  } else {
-    String result = resDoc["result"] | "DENIED";
-    String message = resDoc["message"] | "Access denied";
-    Serial.print("Denied: ");
-    Serial.println(result);
-    enterDenied(message);
-  }
+  tft.drawLine(cx - 12, cy, cx - 3, cy + 11, ILI9341_WHITE);
+  tft.drawLine(cx - 11, cy + 1, cx - 2, cy + 12, ILI9341_WHITE);
+  tft.drawLine(cx - 3, cy + 11, cx + 15, cy - 12, ILI9341_WHITE);
+  tft.drawLine(cx - 2, cy + 12, cx + 16, cy - 11, ILI9341_WHITE);
 }
 
-// =====================================================================
-// SERVO / DOOR
-// =====================================================================
+void drawDeniedIcon(int cx, int cy) {
+  tft.fillCircle(cx, cy, 27, COLOR_RED_DARK);
+  tft.drawCircle(cx, cy, 27, COLOR_RED);
+  tft.drawCircle(cx, cy, 28, ILI9341_WHITE);
 
-void doorOpen() {
-  Serial.println("Opening door...");
-  // Rotate both servos slowly and in sync
-  for (int a = 0; a <= DOOR_OPEN_ANGLE; a += 3) {
-    servoTop.write(a);
-    servoBottom.write(a);
-    delay(15);
-  }
+  tft.drawLine(cx - 12, cy - 12, cx + 12, cy + 12, ILI9341_WHITE);
+  tft.drawLine(cx - 11, cy - 12, cx + 13, cy + 12, ILI9341_WHITE);
+  tft.drawLine(cx - 12, cy + 12, cx + 12, cy - 12, ILI9341_WHITE);
+  tft.drawLine(cx - 11, cy + 12, cx + 13, cy - 12, ILI9341_WHITE);
 }
 
-void doorClose() {
-  Serial.println("Closing door...");
-  for (int a = DOOR_OPEN_ANGLE; a >= 0; a -= 3) {
-    servoTop.write(a);
-    servoBottom.write(a);
-    delay(15);
-  }
-  servoTop.write(0);
-  servoBottom.write(0);
+void drawWarningIcon(int cx, int cy) {
+  tft.fillTriangle(
+    cx,
+    cy - 29,
+    cx - 29,
+    cy + 23,
+    cx + 29,
+    cy + 23,
+    COLOR_YELLOW_DARK
+  );
+
+  tft.drawTriangle(
+    cx,
+    cy - 29,
+    cx - 29,
+    cy + 23,
+    cx + 29,
+    cy + 23,
+    ILI9341_WHITE
+  );
+
+  tft.fillRoundRect(cx - 2, cy - 11, 5, 20, 2, ILI9341_BLACK);
+  tft.fillCircle(cx, cy + 15, 3, ILI9341_BLACK);
 }
 
-// =====================================================================
-// LCD 16x2
-// =====================================================================
+void drawRFIDReadyIcon() {
+  const int x = 91;
+  const int y = 121;
 
-void lcdShow(const char* line1, const char* line2) {
+  tft.fillRoundRect(x, y, 58, 46, 7, COLOR_BLUE_DARK);
+  tft.drawRoundRect(x, y, 58, 46, 7, ILI9341_WHITE);
+
+  tft.drawLine(x + 10, y + 12, x + 39, y + 12, ILI9341_WHITE);
+  tft.drawLine(x + 10, y + 20, x + 31, y + 20, ILI9341_WHITE);
+
+  tft.drawCircle(x + 46, y + 28, 5, COLOR_GOLD);
+  tft.drawCircle(x + 46, y + 28, 9, COLOR_GOLD);
+}
+
+
+// =====================================================
+// FAST TFT RENDERING
+//
+// The header, real Guelph logo, and panel frame are
+// STATIC. They are drawn only once at startup.
+//
+// During ACTIVE / STOPPED / CARD result transitions,
+// only the changing content inside the panel is erased
+// and redrawn. This keeps the proven 1 MHz SPI speed
+// and avoids touching the working PN532/TFT logic.
+// =====================================================
+
+void drawStaticFrame() {
+  tft.fillScreen(COLOR_BG);
+  drawBrandHeader();
+  drawMainPanel();
+}
+
+
+// =====================================================
+// CLEAR ONLY DYNAMIC PANEL CONTENT
+//
+// These three rectangles cover every changing item:
+// - status / RFID icon
+// - status text, member name, reason
+// - action bar and UID/footer
+//
+// They stay inside the existing rounded panel border,
+// so the header, logo, panel frame, and design remain
+// untouched between screen changes.
+// =====================================================
+
+void clearDynamicContent() {
+  // Icon area
+  tft.fillRect(
+    70,
+    107,
+    100,
+    69,
+    COLOR_PANEL
+  );
+
+  // Main status / name / message area
+  tft.fillRect(
+    20,
+    176,
+    200,
+    72,
+    COLOR_PANEL
+  );
+
+  // Action bar + footer / UID area
+  tft.fillRect(
+    35,
+    240,
+    170,
+    64,
+    COLOR_PANEL
+  );
+}
+
+
+// =====================================================
+// TFT SCREENS
+// =====================================================
+
+void showStoppedScreen() {
+  clearDynamicContent();
+
+  drawDeniedIcon(120, 143);
+
+  centeredText("SYSTEM STOPPED", 181, 2, ILI9341_WHITE);
+  centeredText("Reader is offline", 211, 1, COLOR_MUTED);
+
+  tft.fillRoundRect(52, 241, 136, 34, 8, COLOR_RED_DARK);
+  centeredTextOnBackground(
+    "PRESS POWER",
+    252,
+    2,
+    ILI9341_WHITE,
+    COLOR_RED_DARK
+  );
+
+  centeredText("ACCESS CONTROL SYSTEM", 290, 1, COLOR_MUTED);
+}
+
+void showReadyScreen() {
+  clearDynamicContent();
+
+  drawRFIDReadyIcon();
+
+  centeredText("SYSTEM ACTIVE", 184, 2, COLOR_GREEN);
+  centeredText("Scan your membership card", 213, 1, COLOR_WHITE_SOFT);
+
+  tft.fillRoundRect(45, 241, 150, 32, 8, COLOR_BLUE_DARK);
+  centeredTextOnBackground(
+    "RFID READER READY",
+    252,
+    1,
+    ILI9341_WHITE,
+    COLOR_BLUE_DARK
+  );
+
+  centeredText("Tap card above reader", 288, 1, COLOR_MUTED);
+}
+
+void showResultScreen(
+  const CardRecord* record,
+  const char* uid,
+  const char* direction
+) {
+  clearDynamicContent();
+
+  const bool isExit = (direction != nullptr && strcmp(direction, "OUT") == 0);
+
+  if (record->status == STATUS_APPROVED) {
+    drawApprovedIcon(120, 139);
+    centeredText("ACCESS APPROVED", 176, 2, COLOR_GREEN);
+    centeredText(record->name, 207, 2, COLOR_GOLD);
+    centeredText(record->message, 236, 1, COLOR_WHITE_SOFT);
+
+    tft.fillRoundRect(66, 256, 108, 24, 6, COLOR_GREEN_DARK);
+    centeredTextOnBackground(
+      isExit ? "EXIT RECORDED" : "ENTRY ALLOWED",
+      264,
+      1,
+      ILI9341_WHITE,
+      COLOR_GREEN_DARK
+    );
+  }
+  else if (record->status == STATUS_WARNING) {
+    drawWarningIcon(120, 139);
+    centeredText("ACCESS APPROVED", 176, 2, COLOR_YELLOW);
+    centeredText(record->name, 207, 2, COLOR_GOLD);
+    centeredText(record->message, 235, 1, COLOR_YELLOW);
+
+    tft.fillRoundRect(50, 256, 140, 24, 6, COLOR_YELLOW_DARK);
+    centeredTextOnBackground(
+      isExit ? "EXIT RECORDED" : "MEMBERSHIP WARNING",
+      264,
+      1,
+      ILI9341_BLACK,
+      COLOR_YELLOW_DARK
+    );
+  }
+  else if (record->status == STATUS_DENIED) {
+    drawDeniedIcon(120, 139);
+    centeredText("ACCESS DENIED", 176, 2, COLOR_RED);
+    centeredText(record->name, 207, 2, COLOR_GOLD);
+    centeredText(record->message, 236, 1, COLOR_WHITE_SOFT);
+
+    tft.fillRoundRect(66, 256, 108, 24, 6, COLOR_RED_DARK);
+    centeredTextOnBackground(
+      "NO ENTRY",
+      264,
+      1,
+      ILI9341_WHITE,
+      COLOR_RED_DARK
+    );
+  }
+  else {
+    drawDeniedIcon(120, 139);
+    centeredText("ACCESS DENIED", 176, 2, COLOR_RED);
+    centeredText("UNKNOWN MEMBER", 207, 2, COLOR_GOLD);
+    centeredText(record->message, 236, 1, COLOR_WHITE_SOFT);
+
+    tft.fillRoundRect(52, 256, 136, 24, 6, COLOR_RED_DARK);
+    centeredTextOnBackground(
+      "CARD NOT REGISTERED",
+      264,
+      1,
+      ILI9341_WHITE,
+      COLOR_RED_DARK
+    );
+  }
+
+  tft.fillRoundRect(42, 285, 156, 16, 4, COLOR_PANEL_2);
+  centeredTextOnBackground(
+    uid,
+    289,
+    1,
+    COLOR_MUTED,
+    COLOR_PANEL_2
+  );
+}
+
+
+// =====================================================
+// LCD HELPERS
+// =====================================================
+
+void lcdPrintTwoLines(
+  const char* line1,
+  const char* line2
+) {
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print(line1);
@@ -354,102 +834,823 @@ void lcdShow(const char* line1, const char* line2) {
   lcd.print(line2);
 }
 
-// =====================================================================
-// TFT DISPLAY
-// =====================================================================
+void showLCDGreeting() {
+  lcd.clear();
 
-void tftMessage(const char* title, const char* body, uint16_t color) {
-  tft.fillScreen(ILI9341_BLACK);
-  tft.setTextColor(color);
-  tft.setTextSize(3);
-  tft.setCursor(10, 40);
-  tft.println(title);
-  tft.setTextSize(2);
-  tft.setTextColor(ILI9341_WHITE);
-  tft.setCursor(10, 100);
-  tft.println(body);
+  // 15 characters. Fits cleanly on row 1.
+  lcd.setCursor(0, 0);
+  lcd.print("WELCOME! HAVE A");
+
+  // 15 normal characters + custom smiley = exactly 16 columns.
+  lcd.setCursor(0, 1);
+  lcd.print("GREAT WORKOUT! ");
+  lcd.write((uint8_t)0);
 }
 
-void tftIdleScreen() {
-  tft.fillScreen(ILI9341_BLACK);
-
-  // Header — silver bar
-  tft.fillRect(0, 0, tft.width(), 40, tft.color565(180, 180, 180));
-  tft.setTextColor(ILI9341_BLACK);
-  tft.setTextSize(2);
-  tft.setCursor(10, 12);
-  tft.print("Guelph Fit&Rec");
-
-  // Prompt
-  tft.setTextColor(ILI9341_WHITE);
-  tft.setTextSize(3);
-  tft.setCursor(30, 100);
-  tft.println("Tap");
-  tft.setCursor(30, 140);
-  tft.println("Your");
-  tft.setCursor(30, 180);
-  tft.println("Card");
-
-  // Icon area
-  tft.drawRoundRect(140, 100, 80, 100, 8, ILI9341_YELLOW);
+void showLCDReady() {
+  showLCDGreeting();
 }
 
-void tftSuccess(const String& name, const String& direction, int occupancy, int capacity) {
-  tft.fillScreen(tft.color565(0, 80, 0));  // dark green background
-
-  // Big green check
-  tft.fillRect(0, 0, tft.width(), 40, ILI9341_DARKGREEN);
-  tft.setTextColor(ILI9341_WHITE);
-  tft.setTextSize(2);
-  tft.setCursor(10, 12);
-  tft.print(direction == "IN" ? "GRANTED - IN" : "GRANTED - OUT");
-
-  // Draw a large check mark
-  drawCheckmark(120, 90, 60, ILI9341_GREEN);
-
-  // Name
-  tft.setTextColor(ILI9341_WHITE);
-  tft.setTextSize(2);
-  tft.setCursor(10, 180);
-  tft.print(name);
-
-  // Occupancy footer
-  tft.setTextSize(1);
-  tft.setCursor(10, 220);
-  tft.printf("Occupancy: %d / %d", occupancy, capacity);
-
-  tft.setCursor(10, 240);
-  tft.print("Enjoy your workout!");
+void showLCDStopped() {
+  showLCDGreeting();
 }
 
-void tftDenied(const String& reason) {
-  tft.fillScreen(tft.color565(80, 0, 0));  // dark red background
-
-  tft.fillRect(0, 0, tft.width(), 40, ILI9341_RED);
-  tft.setTextColor(ILI9341_WHITE);
-  tft.setTextSize(2);
-  tft.setCursor(10, 12);
-  tft.print("DENIED");
-
-  drawXmark(120, 90, 50, ILI9341_WHITE);
-
-  tft.setTextColor(ILI9341_WHITE);
-  tft.setTextSize(2);
-  tft.setCursor(10, 180);
-  tft.print(reason);
+void showLCDResult(const CardRecord* record) {
+  // Keep the LCD as a permanent greeting display.
+  // Card-specific status remains on the TFT only.
+  (void)record;
+  showLCDGreeting();
 }
 
-void drawCheckmark(int cx, int cy, int size, uint16_t color) {
-  // Simple thick check mark
-  for (int i = -3; i <= 3; i++) {
-    tft.drawLine(cx - size/2 + i, cy,           cx + i, cy + size/2, color);
-    tft.drawLine(cx + i, cy + size/2,           cx + size/2 + i, cy - size/2, color);
+
+// =====================================================
+// UID -> TEXT
+// =====================================================
+
+void uidToText(
+  uint8_t *uid,
+  uint8_t uidLength,
+  char *output,
+  size_t outputSize
+) {
+  if (outputSize == 0) return;
+
+  output[0] = '\0';
+  size_t used = 0;
+
+  for (uint8_t i = 0; i < uidLength; i++) {
+    int written = snprintf(
+      output + used,
+      outputSize - used,
+      (i == 0) ? "%02X" : ":%02X",
+      uid[i]
+    );
+
+    if (written <= 0) break;
+
+    used += (size_t)written;
+
+    if (used >= outputSize) {
+      output[outputSize - 1] = '\0';
+      break;
+    }
   }
 }
 
-void drawXmark(int cx, int cy, int size, uint16_t color) {
-  for (int i = -3; i <= 3; i++) {
-    tft.drawLine(cx - size/2 + i, cy - size/2, cx + size/2 + i, cy + size/2, color);
-    tft.drawLine(cx + size/2 + i, cy - size/2, cx - size/2 + i, cy + size/2, color);
+
+// =====================================================
+// PN532 LOW-LEVEL RESPONSE
+// Working logic preserved.
+// =====================================================
+
+bool readSimplePN532Response(uint8_t expectedResponseCommand) {
+  uint8_t raw[10] = {0};
+
+  uint8_t received = Wire.requestFrom(
+    (uint8_t)PN532_I2C_ADDRESS,
+    (uint8_t)sizeof(raw)
+  );
+
+  if (received != sizeof(raw)) {
+    while (Wire.available()) Wire.read();
+    return false;
   }
+
+  for (uint8_t i = 0; i < sizeof(raw); i++) {
+    if (!Wire.available()) return false;
+    raw[i] = Wire.read();
+  }
+
+  if (raw[0] != PN532_I2C_READY) return false;
+
+  uint8_t *f = &raw[1];
+
+  if (f[0] != 0x00 || f[1] != 0x00 || f[2] != 0xFF) return false;
+  if (f[3] != 0x02 || f[4] != 0xFE) return false;
+  if (f[5] != PN532_PN532TOHOST) return false;
+  if (f[6] != expectedResponseCommand) return false;
+
+  if (((uint8_t)(f[5] + f[6] + f[7])) != 0x00) return false;
+  if (f[8] != 0x00) return false;
+
+  return true;
+}
+
+bool readStatusPN532Response(
+  uint8_t expectedResponseCommand,
+  uint8_t &status
+) {
+  uint8_t raw[11] = {0};
+
+  uint8_t received = Wire.requestFrom(
+    (uint8_t)PN532_I2C_ADDRESS,
+    (uint8_t)sizeof(raw)
+  );
+
+  if (received != sizeof(raw)) {
+    while (Wire.available()) Wire.read();
+    return false;
+  }
+
+  for (uint8_t i = 0; i < sizeof(raw); i++) {
+    if (!Wire.available()) return false;
+    raw[i] = Wire.read();
+  }
+
+  if (raw[0] != PN532_I2C_READY) return false;
+
+  uint8_t *f = &raw[1];
+
+  if (f[0] != 0x00 || f[1] != 0x00 || f[2] != 0xFF) return false;
+  if (f[3] != 0x03 || f[4] != 0xFD) return false;
+  if (f[5] != PN532_PN532TOHOST) return false;
+  if (f[6] != expectedResponseCommand) return false;
+
+  status = f[7];
+
+  if (((uint8_t)(f[5] + f[6] + f[7] + f[8])) != 0x00) return false;
+  if (f[9] != 0x00) return false;
+
+  return true;
+}
+
+bool configureFinitePassiveRetries(uint8_t retries) {
+  uint8_t command[5] = {
+    PN532_COMMAND_RFCONFIGURATION,
+    0x05,
+    0xFF,
+    0x01,
+    retries
+  };
+
+  if (!nfc.sendCommandCheckAck(command, sizeof(command), 1000)) {
+    return false;
+  }
+
+  delay(2);
+
+  return readSimplePN532Response(
+    PN532_COMMAND_RFCONFIGURATION + 1
+  );
+}
+
+bool turnRFOffClean() {
+  uint8_t command[3] = {
+    PN532_COMMAND_RFCONFIGURATION,
+    0x01,
+    0x00
+  };
+
+  if (!nfc.sendCommandCheckAck(command, sizeof(command), 1000)) {
+    return false;
+  }
+
+  delay(2);
+
+  return readSimplePN532Response(
+    PN532_COMMAND_RFCONFIGURATION + 1
+  );
+}
+
+bool releaseTargetClean() {
+  uint8_t command[2] = {
+    PN532_COMMAND_INRELEASE,
+    0x00
+  };
+
+  if (!nfc.sendCommandCheckAck(command, sizeof(command), 1000)) {
+    return false;
+  }
+
+  delay(2);
+
+  uint8_t status = 0xFF;
+
+  if (!readStatusPN532Response(
+        PN532_COMMAND_INRELEASE + 1,
+        status
+      )) {
+    return false;
+  }
+
+  return (status == 0x00);
+}
+
+bool finishCardSessionClean() {
+  bool released = releaseTargetClean();
+  bool rfOff = turnRFOffClean();
+
+  delay(40);
+
+  return (released && rfOff);
+}
+
+
+// =====================================================
+// GATE SERVO CONTROL
+//
+// This state machine is intentionally separate from the proven
+// PN532/TFT/POWER functions. It never reinitializes the TFT,
+// SPI bus, PN532, or IR receiver.
+// =====================================================
+
+bool gateIsBusy() {
+  return gateState != GATE_CLOSED;
+}
+
+void writeGatePositions() {
+  doorA.write(doorAPosition);
+  doorB.write(doorBPosition);
+}
+
+void initializeGateServos() {
+  doorA.setPeriodHertz(50);
+  doorB.setPeriodHertz(50);
+
+  // Same pulse-width configuration used in the successful
+  // two-servo bench test.
+  doorA.attach(DOOR_A_SERVO_PIN, 500, 2400);
+  doorB.attach(DOOR_B_SERVO_PIN, 500, 2400);
+
+  doorAPosition = DOOR_CLOSED_ANGLE;
+  doorBPosition = DOOR_CLOSED_ANGLE;
+  writeGatePositions();
+
+  gateState = GATE_CLOSED;
+  lastServoStepAt = 0;
+  gateOpenedAt = 0;
+
+  Serial.println("GATE SERVOS READY: A=90, B=90");
+}
+
+void startGateCycle() {
+  // Only an active system with a fully closed gate can start a cycle.
+  if (!systemActive) return;
+  if (gateState != GATE_CLOSED) return;
+
+  gateState = GATE_OPENING;
+  lastServoStepAt = millis();
+
+  Serial.println("GATE OPENING: A 90->0, B 90->180 (SYNC)");
+}
+
+void beginGateClosing() {
+  if (gateState == GATE_CLOSED || gateState == GATE_CLOSING) return;
+
+  gateState = GATE_CLOSING;
+  lastServoStepAt = millis();
+
+  Serial.println("GATE CLOSING: returning both doors to 90");
+}
+
+void updateGateServos() {
+  unsigned long now = millis();
+
+  // Safety behavior: if POWER switches the system to STOPPED while
+  // the gate is open/opening, close the gate. This does not modify
+  // the proven stopSystem() function.
+  if (!systemActive &&
+      gateState != GATE_CLOSED &&
+      gateState != GATE_CLOSING) {
+    beginGateClosing();
+  }
+
+  if (gateState == GATE_CLOSED) {
+    return;
+  }
+
+  if (gateState == GATE_OPEN) {
+    if (now - gateOpenedAt >= GATE_OPEN_HOLD_TIME) {
+      beginGateClosing();
+    }
+    return;
+  }
+
+  if (now - lastServoStepAt < SERVO_STEP_INTERVAL) {
+    return;
+  }
+
+  lastServoStepAt = now;
+
+  if (gateState == GATE_OPENING) {
+    // Both doors travel exactly 90 degrees in opposite directions.
+    // Advance them on the same timer tick so they start together,
+    // move together, and reach their open positions together.
+    if (doorAPosition > DOOR_A_OPEN_ANGLE) {
+      doorAPosition--;
+    }
+
+    if (doorBPosition < DOOR_B_OPEN_ANGLE) {
+      doorBPosition++;
+    }
+
+    writeGatePositions();
+
+    if (doorAPosition <= DOOR_A_OPEN_ANGLE &&
+        doorBPosition >= DOOR_B_OPEN_ANGLE) {
+      doorAPosition = DOOR_A_OPEN_ANGLE;
+      doorBPosition = DOOR_B_OPEN_ANGLE;
+      writeGatePositions();
+
+      gateState = GATE_OPEN;
+      gateOpenedAt = now;
+
+      Serial.println("GATE OPEN: both doors reached target; holding for 8 seconds");
+    }
+
+    return;
+  }
+
+  if (gateState == GATE_CLOSING) {
+    if (doorAPosition < DOOR_CLOSED_ANGLE) {
+      doorAPosition++;
+    }
+    else if (doorAPosition > DOOR_CLOSED_ANGLE) {
+      doorAPosition--;
+    }
+
+    if (doorBPosition < DOOR_CLOSED_ANGLE) {
+      doorBPosition++;
+    }
+    else if (doorBPosition > DOOR_CLOSED_ANGLE) {
+      doorBPosition--;
+    }
+
+    writeGatePositions();
+
+    if (doorAPosition == DOOR_CLOSED_ANGLE &&
+        doorBPosition == DOOR_CLOSED_ANGLE) {
+      gateState = GATE_CLOSED;
+      gateOpenedAt = 0;
+      lastServoStepAt = 0;
+
+      Serial.println("GATE CLOSED: A=90, B=90");
+    }
+  }
+}
+
+
+// =====================================================
+// SYSTEM CONTROL
+// =====================================================
+
+void activateSystem() {
+  systemActive = true;
+  showingCard = false;
+  cardLatched = false;
+  noCardStreak = 0;
+
+  showLCDReady();
+  showReadyScreen();
+
+  nextRFIDPollAt = millis() + 100;
+
+  Serial.println("SYSTEM ACTIVE");
+}
+
+void stopSystem() {
+  systemActive = false;
+  showingCard = false;
+  cardLatched = false;
+  noCardStreak = 0;
+
+  bool rfOff = turnRFOffClean();
+
+  if (!rfOff) {
+    delay(10);
+    rfOff = turnRFOffClean();
+  }
+
+  if (!rfOff) {
+    Serial.println("ERROR: Could not shut PN532 RF field down.");
+    lcdPrintTwoLines("RFID ERROR", "Restart system");
+    return;
+  }
+
+  delay(30);
+
+  showLCDStopped();
+  showStoppedScreen();
+
+  Serial.println("SYSTEM STOPPED");
+}
+
+
+// =====================================================
+// IR REMOTE
+// =====================================================
+
+void checkRemote() {
+  if (!TinyIRReceiverDecode()) return;
+
+  uint8_t command = TinyIRReceiverData.Command;
+
+  bool repeat =
+    TinyIRReceiverData.Flags &
+    IRDATA_FLAGS_IS_REPEAT;
+
+  if (repeat) return;
+  if (command != POWER_COMMAND) return;
+
+  if (systemActive) {
+    stopSystem();
+  } else {
+    activateSystem();
+  }
+}
+
+
+// =====================================================
+// CARD SCREEN TIMER
+// =====================================================
+
+void updateCardScreen() {
+  if (!showingCard) return;
+
+  if (millis() - cardScreenStarted < CARD_SCREEN_TIME) return;
+
+  showingCard = false;
+
+  if (!systemActive) return;
+
+  showLCDReady();
+  showReadyScreen();
+
+  nextRFIDPollAt = millis() + RFID_REARM_DELAY;
+}
+
+
+// =====================================================
+// WEBSITE / WIFI CONNECTION
+//
+// The physical reader never changes occupancy by itself. It sends the UID
+// to /api/scan and only opens the gate after the website confirms SUCCESS.
+// This keeps the website and the real gate on one authoritative state.
+// =====================================================
+
+void connectWiFi() {
+  if (WiFi.status() == WL_CONNECTED) return;
+
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  Serial.print("WiFi connecting");
+  unsigned long started = millis();
+  while (WiFi.status() != WL_CONNECTED &&
+         millis() - started < WIFI_CONNECT_TIMEOUT_MS) {
+    delay(250);
+    Serial.print(".");
+  }
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("WiFi connected. IP: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("WiFi not connected. Scans will be denied until connection returns.");
+  }
+}
+
+bool copyJsonText(JsonVariantConst value, char* out, size_t outSize, const char* fallback) {
+  if (outSize == 0) return false;
+  const char* text = value.is<const char*>() ? value.as<const char*>() : nullptr;
+  if (!text || text[0] == '\0') text = fallback;
+  snprintf(out, outSize, "%s", text ? text : "");
+  return true;
+}
+
+void makeNetworkDenied(ApiDecision& decision, const char* message) {
+  decision.responseReceived = false;
+  decision.accessGranted = false;
+  decision.status = STATUS_DENIED;
+  snprintf(decision.name, sizeof(decision.name), "SYSTEM OFFLINE");
+  snprintf(decision.message, sizeof(decision.message), "%s", message);
+  decision.direction[0] = '\0';
+  decision.occupancy = -1;
+  decision.capacity = -1;
+}
+
+bool postScanToWebsite(const char* cardUid, ApiDecision& decision) {
+  makeNetworkDenied(decision, "Network unavailable");
+
+  if (WiFi.status() != WL_CONNECTED) {
+    connectWiFi();
+  }
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  String url = String(API_BASE_URL) + "/api/scan";
+  String payload;
+  DynamicJsonDocument requestDoc(256);
+  requestDoc["cardUid"] = cardUid;
+  requestDoc["gateId"] = GATE_ID;
+  serializeJson(requestDoc, payload);
+
+  HTTPClient http;
+  http.setTimeout(HTTP_TIMEOUT_MS);
+
+  WiFiClientSecure secureClient;
+  secureClient.setInsecure(); // Prototype: Vercel HTTPS without embedding a CA certificate.
+
+  bool began = http.begin(secureClient, url);
+  if (!began) {
+    makeNetworkDenied(decision, "API connection failed");
+    return false;
+  }
+
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authorization", String("Bearer ") + SCAN_API_SECRET);
+
+  int httpCode = http.POST(payload);
+  if (httpCode <= 0) {
+    Serial.print("API POST failed: ");
+    Serial.println(http.errorToString(httpCode));
+    http.end();
+    makeNetworkDenied(decision, "Website unreachable");
+    return false;
+  }
+
+  String responseBody = http.getString();
+  http.end();
+
+  Serial.print("API HTTP ");
+  Serial.println(httpCode);
+  Serial.println(responseBody);
+
+  DynamicJsonDocument responseDoc(1536);
+  DeserializationError jsonError = deserializeJson(responseDoc, responseBody);
+  if (jsonError) {
+    makeNetworkDenied(decision, "Bad website response");
+    return false;
+  }
+
+  decision.responseReceived = true;
+  decision.occupancy = responseDoc["occupancy"] | -1;
+  decision.capacity = responseDoc["capacity"] | -1;
+
+  const bool ok = responseDoc["ok"] | false;
+  const char* result = responseDoc["result"] | "";
+  const char* accessStatus = responseDoc["accessStatus"] | "DENIED";
+  const char* direction = responseDoc["direction"] | "";
+
+  snprintf(decision.direction, sizeof(decision.direction), "%s", direction);
+
+  const char* firstName = responseDoc["member"]["firstName"] | "";
+  const char* lastName = responseDoc["member"]["lastName"] | "";
+  String fullName = String(firstName);
+  if (lastName[0] != '\0') {
+    if (fullName.length()) fullName += " ";
+    fullName += lastName;
+  }
+  fullName.toUpperCase();
+
+  if (ok && strcmp(result, "SUCCESS") == 0) {
+    decision.accessGranted = true;
+    decision.status = (strcmp(accessStatus, "WARNING") == 0)
+      ? STATUS_WARNING
+      : STATUS_APPROVED;
+    snprintf(decision.name, sizeof(decision.name), "%s",
+             fullName.length() ? fullName.c_str() : "MEMBER");
+    if (decision.status == STATUS_WARNING) {
+      copyJsonText(responseDoc["message"], decision.message, sizeof(decision.message),
+                   "Membership warning");
+    } else {
+      snprintf(decision.message, sizeof(decision.message), "%s",
+               strcmp(direction, "OUT") == 0 ? "Exit recorded" : "Membership active");
+    }
+    return true;
+  }
+
+  decision.accessGranted = false;
+  decision.status = (strcmp(result, "DENIED_UNKNOWN_CARD") == 0)
+    ? STATUS_UNKNOWN
+    : STATUS_DENIED;
+  snprintf(decision.name, sizeof(decision.name), "%s",
+           fullName.length() ? fullName.c_str() : "UNKNOWN MEMBER");
+  copyJsonText(responseDoc["message"], decision.message, sizeof(decision.message),
+               decision.status == STATUS_UNKNOWN ? "Unknown card" : "Access denied");
+  return true;
+}
+
+// =====================================================
+// RFID POLLING
+// Working logic preserved.
+// =====================================================
+
+void pollRFID() {
+  if (!systemActive) return;
+  if (showingCard) return;
+
+  unsigned long now = millis();
+
+  if ((long)(now - nextRFIDPollAt) < 0) return;
+
+  nextRFIDPollAt = now + RFID_POLL_INTERVAL;
+
+  uint8_t uid[7] = {0};
+  uint8_t uidLength = 0;
+
+  bool detected = nfc.readPassiveTargetID(
+    PN532_MIFARE_ISO14443A,
+    uid,
+    &uidLength,
+    500
+  );
+
+  if (!detected) {
+    checkRemote();
+
+    if (!systemActive) return;
+
+    if (cardLatched) {
+      noCardStreak++;
+
+      if (noCardStreak >= NO_CARD_READS_TO_UNLOCK) {
+        cardLatched = false;
+        noCardStreak = 0;
+        Serial.println("CARD REMOVED");
+      }
+    }
+
+    return;
+  }
+
+  bool sessionClean = finishCardSessionClean();
+
+  checkRemote();
+
+  if (!systemActive) return;
+
+  if (!sessionClean) {
+    Serial.println("ERROR: PN532 SESSION CLEANUP FAILED");
+    systemActive = false;
+    lcdPrintTwoLines("RFID ERROR", "Restart system");
+    return;
+  }
+
+  noCardStreak = 0;
+
+  if (uidLength != 4 && uidLength != 7) {
+    Serial.print("INVALID UID LENGTH: ");
+    Serial.println(uidLength);
+    return;
+  }
+
+  if (cardLatched) return;
+
+  cardLatched = true;
+
+  char uidText[24];
+
+  uidToText(
+    uid,
+    uidLength,
+    uidText,
+    sizeof(uidText)
+  );
+
+  Serial.print("CARD DETECTED: ");
+  Serial.println(uidText);
+
+  ApiDecision decision;
+  postScanToWebsite(uidText, decision);
+
+  CardRecord websiteRecord = {
+    uidText,
+    decision.name,
+    decision.status,
+    decision.message
+  };
+
+  showLCDResult(&websiteRecord);
+  showResultScreen(&websiteRecord, uidText, decision.direction);
+
+  showingCard = true;
+  cardScreenStarted = millis();
+
+  if (decision.occupancy >= 0 && decision.capacity > 0) {
+    Serial.print("LIVE OCCUPANCY: ");
+    Serial.print(decision.occupancy);
+    Serial.print("/");
+    Serial.println(decision.capacity);
+  }
+
+  // The website is authoritative. Only its approved/warning SUCCESS response
+  // may start the physical gate. Denied or network-failed scans never open it.
+  if (decision.accessGranted) {
+    startGateCycle();
+  }
+}
+
+
+// =====================================================
+// SETUP
+// =====================================================
+
+void setup() {
+  Serial.begin(115200);
+  delay(1500);
+
+  Serial.println();
+  Serial.println("================================");
+  Serial.println("GRYPHON ACCESS UI REAL LOGO + LIVE WEBSITE");
+  Serial.println("================================");
+
+  // Initialize the gate first so any startup movement happens before
+  // the proven TFT/PN532 initialization sequence begins.
+  initializeGateServos();
+  delay(500);
+
+  lcd.begin(16, 2);
+  lcd.createChar(0, lcdSmiley);
+
+  pinMode(TFT_CS, OUTPUT);
+  digitalWrite(TFT_CS, HIGH);
+
+  pinMode(TFT_RST, OUTPUT);
+  digitalWrite(TFT_RST, HIGH);
+
+  tftSPI.begin(
+    TFT_SCK,
+    -1,
+    TFT_MOSI,
+    TFT_CS
+  );
+
+  tft.begin(1000000);
+  tft.setRotation(0);
+
+  Wire.begin(
+    PN532_SDA,
+    PN532_SCL
+  );
+
+  Serial.println("Starting PN532...");
+
+  nfc.begin();
+  delay(200);
+
+  uint32_t versiondata = nfc.getFirmwareVersion();
+
+  if (!versiondata) {
+    Serial.println("PN532 NOT DETECTED");
+    while (true) delay(1000);
+  }
+
+  Serial.print("PN532 firmware: ");
+  Serial.print((versiondata >> 16) & 0xFF);
+  Serial.print(".");
+  Serial.println((versiondata >> 8) & 0xFF);
+
+  if (!configureFinitePassiveRetries(0x01)) {
+    Serial.println("PN532 RETRY CONFIGURATION FAILED");
+    while (true) delay(1000);
+  }
+
+  Serial.println("PN532 finite scan mode configured.");
+
+  if (!turnRFOffClean()) {
+    Serial.println("PN532 INITIAL RF OFF FAILED");
+    while (true) delay(1000);
+  }
+
+  if (!initPCIInterruptForTinyIRReceiver()) {
+    Serial.println("IR INITIALIZATION FAILED");
+    while (true) delay(1000);
+  }
+
+  systemActive = false;
+  showingCard = false;
+  cardLatched = false;
+  noCardStreak = 0;
+
+  // Draw the expensive static header/logo/panel only once.
+  drawStaticFrame();
+
+  showLCDStopped();
+  showStoppedScreen();
+
+  connectWiFi();
+
+  Serial.println("SYSTEM READY");
+}
+
+
+// =====================================================
+// LOOP
+// =====================================================
+
+void loop() {
+  checkRemote();
+  updateCardScreen();
+  updateGateServos();
+
+  // Do not begin another PN532 scan while an approved member's
+  // gate cycle is still in progress. The proven pollRFID() function
+  // itself remains unchanged.
+  if (!gateIsBusy()) {
+    pollRFID();
+  }
+
+  delay(1);
 }

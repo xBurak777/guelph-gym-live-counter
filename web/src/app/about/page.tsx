@@ -1,7 +1,7 @@
 import Image from "next/image";
 import PageShell from "@/components/PageShell";
 import PageHero from "@/components/PageHero";
-import { Section, SectionHeader, StatGrid, CTAButton, Callout } from "@/components/ui";
+import { Section, SectionHeader, StatGrid, CTAButton } from "@/components/ui";
 
 export const metadata = { title: "About the Department" };
 

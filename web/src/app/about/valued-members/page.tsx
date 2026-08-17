@@ -13,8 +13,6 @@ export const metadata: Metadata = {
 
 export default function ValuedMembersPage() {
   const featured = STAFF.filter((s) => s.featured);
-  const others = STAFF.filter((s) => !s.featured);
-
   return (
     <PageShell>
       {/* Hero */}

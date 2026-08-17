@@ -33,7 +33,7 @@ export default function BeachVolleyballPage() {
           <SectionHeader eyebrow="Register" title="How to enter a team" />
           <div className="mt-8">
             <Callout title="Registration">
-              Registration opens each spring through CONNECT. Fees and cancellation policy follow the standard <a href="/sports/community-leagues" className="underline">Community Leagues</a> A/B/C schedule. Contact the Athletics Facility Booking Office at ext. 53790 to confirm your team's placement.
+              Registration opens each spring through CONNECT. Fees and cancellation policy follow the standard <a href="/sports/community-leagues" className="underline">Community Leagues</a> A/B/C schedule. Contact the Athletics Facility Booking Office at ext. 53790 to confirm your team&apos;s placement.
             </Callout>
           </div>
         </div>

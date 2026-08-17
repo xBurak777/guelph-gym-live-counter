@@ -1,5 +1,7 @@
 # RFID Gate — SolidWorks Build Guide
 
+> Historical mechanical reference: this guide was created for the earlier SG90 concept. The completed electronics use two MG996-class servos. Recalculate actuator pockets, brackets, horn interfaces, and clearances from the actual MG996-class hardware before fabrication.
+
 **Project:** Guelph Fit & Rec live-occupancy gate demo
 **Designer:** Burak Aksoy
 **Date:** August 2026

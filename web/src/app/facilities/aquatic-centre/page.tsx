@@ -60,7 +60,7 @@ export default function AquaticCentrePage() {
           </div>
           <div className="mt-8">
             <Callout title="Pool admission standards">
-              All recreation swim participants must enter the facility through the front doors. Children 5 years of age and under must be directly supervised (within arm's reach) at all times. Detailed pool admission standards are posted on the on-deck signage.
+              All recreation swim participants must enter the facility through the front doors. Children 5 years of age and under must be directly supervised (within arm&apos;s reach) at all times. Detailed pool admission standards are posted on the on-deck signage.
             </Callout>
           </div>
         </div>

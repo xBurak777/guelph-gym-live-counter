@@ -42,7 +42,7 @@ export default function GPAPage() {
           </div>
           <div className="mt-8">
             <Callout title="Coach & athlete development">
-              GPA runs in parallel with the university's Fitness Certifications pathway — many GPA coaches hold Personal Trainer, Strength Training Fundamentals and canfitpro certifications earned through our programs.
+              GPA runs in parallel with the university&apos;s Fitness Certifications pathway — many GPA coaches hold Personal Trainer, Strength Training Fundamentals and canfitpro certifications earned through our programs.
             </Callout>
           </div>
         </div>

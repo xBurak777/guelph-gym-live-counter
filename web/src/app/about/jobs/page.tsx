@@ -72,7 +72,7 @@ export default function JobsPage() {
           </div>
           <div className="mt-8">
             <Callout title="Where to apply">
-              All Gryphon Athletics student jobs are posted on Experience Guelph, the university's official student-jobs portal. Search for 'Athletics' or 'Fit &amp; Rec' at experienceguelph.ca. For questions about specific roles contact Client Services at 519-824-4120 ext. 56253.
+              All Gryphon Athletics student jobs are posted on Experience Guelph, the university&apos;s official student-jobs portal. Search for &apos;Athletics&apos; or &apos;Fit &amp; Rec&apos; at experienceguelph.ca. For questions about specific roles contact Client Services at 519-824-4120 ext. 56253.
             </Callout>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import PageShell from "@/components/PageShell";
 import PageHero from "@/components/PageHero";
-import { Section, SectionHeader, PriceTable, InfoCard, Callout } from "@/components/ui";
+import { Section, SectionHeader, PriceTable, Callout } from "@/components/ui";
 
 export const metadata = { title: "Fitness Certifications — Fitness / Wellness" };
 

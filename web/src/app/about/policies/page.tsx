@@ -1,6 +1,6 @@
 import PageShell from "@/components/PageShell";
 import PageHero from "@/components/PageHero";
-import { Section, SectionHeader, Callout } from "@/components/ui";
+import { Section, Callout } from "@/components/ui";
 
 export const metadata = { title: "Policies & Guidelines" };
 

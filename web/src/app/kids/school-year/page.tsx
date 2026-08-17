@@ -53,7 +53,7 @@ export default function SchoolYearPage() {
           <SectionHeader eyebrow="Registration" title="How to sign up" />
           <div className="mt-8">
             <Callout title="Register through CONNECT">
-              Winter Break Camp registration opens in November. March Break Camp registration opens in February. High Five PHCD and Home Alone Workshop dates are announced 4-6 weeks in advance in the <a href="/about/news" className="underline">What's New</a> feed. Same $30 non-refundable deposit per camper per week applies to break camps as to summer camps.
+              Winter Break Camp registration opens in November. March Break Camp registration opens in February. High Five PHCD and Home Alone Workshop dates are announced 4-6 weeks in advance in the <a href="/about/news" className="underline">What&apos;s New</a> feed. Same $30 non-refundable deposit per camper per week applies to break camps as to summer camps.
             </Callout>
           </div>
         </div>

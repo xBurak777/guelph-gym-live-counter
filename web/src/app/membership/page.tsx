@@ -1,7 +1,6 @@
-import Image from "next/image";
 import PageShell from "@/components/PageShell";
 import PageHero from "@/components/PageHero";
-import { Section, SectionHeader, InfoCard, PriceTable, CTAButton, Callout } from "@/components/ui";
+import { Section, SectionHeader, InfoCard, CTAButton } from "@/components/ui";
 
 export const metadata = { title: "Membership Plans & Pricing" };
 
@@ -168,7 +167,7 @@ export default function MembershipPage() {
                 <span className="shrink-0 h-8 w-8 rounded-full bg-gryphon-red text-white font-black text-sm flex items-center justify-center">1</span>
                 <div>
                   <div className="font-semibold text-slate-900">Bring valid photo ID</div>
-                  <div className="text-sm text-slate-600 mt-1">Student card, driver's licence, or passport. Students require a valid U of G ID.</div>
+                  <div className="text-sm text-slate-600 mt-1">Student card, driver&apos;s licence, or passport. Students require a valid U of G ID.</div>
                 </div>
               </li>
               <li className="flex gap-4">

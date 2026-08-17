@@ -94,7 +94,7 @@
 const char* API_HOST   = "guelph-gym-live-counter.vercel.app";
 const char* API_SCAN   = "/api/scan";
 const char* API_OCC    = "/api/occupancy";
-const char* API_SECRET = "dev-shared-secret-change-in-prod-b7f9e3a1c4d8";
+const char* API_SECRET = "PASTE_YOUR_SCAN_API_SECRET_HERE";
 
 // ============ COLORS (16-bit RGB565) ============
 #define GRYPHON_RED    0xD124   // Deep red
