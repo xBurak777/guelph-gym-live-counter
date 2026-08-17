@@ -1,115 +1,167 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-
-// The ESP32 posts to this endpoint on every card tap.
-//
-// Body: { "cardUid": "AA:BB:CC:DD", "gateId": "gate-1" }
-// Header: Authorization: Bearer <SCAN_API_SECRET>
-//
-// Response: { ok: true, result: "SUCCESS", direction: "IN" | "OUT",
-//             member: { firstName, lastName, membershipTier, membershipEnd },
-//             occupancy: 187 }
+import { GYM_CAPACITY } from "@/lib/occupancy";
 
 const ScanBody = z.object({
   cardUid: z.string().min(1).max(64),
-  gateId: z.string().default("gate-1"),
+  gateId: z.string().min(1).max(64).default("gate-1"),
 });
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function POST(req: NextRequest) {
-  // 1. Verify shared secret
   const secret = process.env.SCAN_API_SECRET;
   const auth = req.headers.get("authorization") ?? "";
   if (!secret || auth !== `Bearer ${secret}`) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
-  // 2. Parse body
   const body = await req.json().catch(() => null);
   const parsed = ScanBody.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ ok: false, error: "bad_request", details: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "bad_request", details: parsed.error.flatten() },
+      { status: 400 }
+    );
   }
-  const { cardUid, gateId } = parsed.data;
 
-  // 3. Look up member
+  const cardUid = normalizeCardUid(parsed.data.cardUid);
+  const gateId = parsed.data.gateId;
+  if (!cardUid) {
+    return NextResponse.json({ ok: false, error: "invalid_card_uid" }, { status: 400 });
+  }
+
   const member = await prisma.member.findUnique({ where: { cardUid } });
 
-  // 3a. Unknown card
+  // Unknown cards are logged, but never change presence or occupancy.
   if (!member) {
     await prisma.scanEvent.create({
       data: { cardUid, direction: "IN", result: "DENIED_UNKNOWN_CARD", gateId },
     });
     return NextResponse.json({
       ok: false,
+      accessStatus: "DENIED",
       result: "DENIED_UNKNOWN_CARD",
       message: "Card not registered.",
+      occupancy: await currentOccupancy(),
+      capacity: GYM_CAPACITY,
     });
   }
 
-  // 3b. Inactive membership
-  if (!member.isActive || member.membershipEnd < new Date()) {
+  const now = new Date();
+
+  // Expired/inactive cards are logged, but never change presence or occupancy.
+  if (!member.isActive || member.membershipEnd <= now) {
+    const result = member.isActive ? "DENIED_EXPIRED" : "DENIED_INACTIVE";
     await prisma.scanEvent.create({
       data: {
         memberId: member.id,
         cardUid,
-        direction: "IN",
-        result: member.isActive ? "DENIED_EXPIRED" : "DENIED_INACTIVE",
+        direction: member.isInside ? "OUT" : "IN",
+        result,
         gateId,
       },
     });
     return NextResponse.json({
       ok: false,
-      result: member.isActive ? "DENIED_EXPIRED" : "DENIED_INACTIVE",
-      message: member.isActive ? "Membership expired." : "Membership inactive.",
+      accessStatus: "DENIED",
+      result,
+      message: member.isActive ? "Membership expired." : "Access denied.",
       member: publicMember(member),
+      occupancy: await currentOccupancy(),
+      capacity: GYM_CAPACITY,
     });
   }
 
-  // 4. Figure out IN vs OUT — toggle based on most-recent successful scan today
-  const lastSuccess = await prisma.scanEvent.findFirst({
-    where: {
-      memberId: member.id,
-      result: "SUCCESS",
-      scannedAt: { gte: startOfGymDay() },
-    },
-    orderBy: { scannedAt: "desc" },
-  });
-  const direction: "IN" | "OUT" = lastSuccess?.direction === "IN" ? "OUT" : "IN";
+  // Retry serializable transactions if two requests race on the same member.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const result = await prisma.$transaction(
+        async (tx) => {
+          const current = await tx.member.findUniqueOrThrow({ where: { id: member.id } });
+          const direction: "IN" | "OUT" = current.isInside ? "OUT" : "IN";
+          const enteredAt = current.currentVisitStartedAt;
 
-  // 5. Record the scan
-  await prisma.scanEvent.create({
-    data: { memberId: member.id, cardUid, direction, result: "SUCCESS", gateId },
-  });
+          await tx.member.update({
+            where: { id: current.id },
+            data: {
+              isInside: direction === "IN",
+              currentVisitStartedAt: direction === "IN" ? now : null,
+            },
+          });
 
-  // 6. On successful exit, close the visit into a GymSession
-  if (direction === "OUT" && lastSuccess && lastSuccess.direction === "IN") {
-    const enteredAt = lastSuccess.scannedAt;
-    const exitedAt = new Date();
-    const durationMinutes = Math.max(1, Math.round((exitedAt.getTime() - enteredAt.getTime()) / 60000));
-    await prisma.gymSession.create({
-      data: { memberId: member.id, enteredAt, exitedAt, durationMinutes },
-    });
+          await tx.scanEvent.create({
+            data: {
+              memberId: current.id,
+              cardUid,
+              direction,
+              result: "SUCCESS",
+              gateId,
+              scannedAt: now,
+            },
+          });
+
+          if (direction === "OUT" && enteredAt) {
+            const durationMinutes = Math.max(
+              1,
+              Math.round((now.getTime() - enteredAt.getTime()) / 60000)
+            );
+            await tx.gymSession.create({
+              data: {
+                memberId: current.id,
+                enteredAt,
+                exitedAt: now,
+                durationMinutes,
+              },
+            });
+          }
+
+          const occupancy = await tx.member.count({ where: { isInside: true } });
+          return { current, direction, occupancy };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+      );
+
+      const daysRemaining = Math.ceil(
+        (result.current.membershipEnd.getTime() - now.getTime()) / 86_400_000
+      );
+      const warning = daysRemaining <= 7;
+
+      return NextResponse.json({
+        ok: true,
+        accessStatus: warning ? "WARNING" : "APPROVED",
+        result: "SUCCESS",
+        direction: result.direction,
+        message: warning
+          ? `Membership expires in ${daysRemaining} day${daysRemaining === 1 ? "" : "s"}.`
+          : result.direction === "IN"
+            ? `Welcome, ${result.current.firstName}. Have a great workout.`
+            : `See you next time, ${result.current.firstName}.`,
+        member: publicMember(result.current),
+        occupancy: result.occupancy,
+        capacity: GYM_CAPACITY,
+      });
+    } catch (error) {
+      const retryable =
+        error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034";
+      if (!retryable || attempt === 2) throw error;
+    }
   }
 
-  // 7. Live occupancy after this scan
-  const { getCurrentOccupancy, GYM_CAPACITY } = await import("@/lib/occupancy");
-  const occupancy = await getCurrentOccupancy();
+  return NextResponse.json({ ok: false, error: "scan_failed" }, { status: 500 });
+}
 
-  return NextResponse.json({
-    ok: true,
-    result: "SUCCESS",
-    direction,
-    message:
-      direction === "IN"
-        ? `Welcome, ${member.firstName}. Have a great workout.`
-        : `See you next time, ${member.firstName}.`,
-    member: publicMember(member),
-    occupancy,
-    capacity: GYM_CAPACITY,
-  });
+function normalizeCardUid(value: string): string {
+  const hex = value.toUpperCase().replace(/[^0-9A-F]/g, "");
+  if (hex.length < 8 || hex.length > 14 || hex.length % 2 !== 0) return "";
+  return hex.match(/.{2}/g)?.join(":") ?? "";
+}
+
+async function currentOccupancy() {
+  return prisma.member.count({ where: { isInside: true } });
 }
 
 function publicMember(m: {
@@ -126,13 +178,4 @@ function publicMember(m: {
     membershipEnd: m.membershipEnd,
     photoUrl: m.photoUrl,
   };
-}
-
-// Gym day starts at 5am — anything scanned before that belongs to yesterday.
-function startOfGymDay(): Date {
-  const now = new Date();
-  const start = new Date(now);
-  start.setHours(5, 0, 0, 0);
-  if (now < start) start.setDate(start.getDate() - 1);
-  return start;
 }

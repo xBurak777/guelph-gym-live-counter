@@ -1,40 +1,23 @@
 import { prisma } from "./prisma";
 
 /**
- * Live gym occupancy: count of members currently inside.
+ * Authoritative live gym occupancy.
  *
- * A member is "inside" if their most recent successful ScanEvent has
- * direction = 'IN' (i.e. they've scanned in and not yet scanned out).
- *
- * Implemented with a window function so it stays fast even at 10k+ members.
+ * The /api/scan endpoint owns Member.isInside. Approved scans toggle it;
+ * denied, expired, inactive, and unknown scans never touch it.
  */
 export async function getCurrentOccupancy(): Promise<number> {
-  const result: Array<{ count: bigint }> = await prisma.$queryRaw`
-    WITH latest AS (
-      SELECT DISTINCT ON ("memberId")
-        "memberId", "direction"
-      FROM "ScanEvent"
-      WHERE "memberId" IS NOT NULL
-        AND "result" = 'SUCCESS'
-        AND "scannedAt" >= NOW() - INTERVAL '18 hours'
-      ORDER BY "memberId", "scannedAt" DESC
-    )
-    SELECT COUNT(*)::bigint AS count FROM latest WHERE "direction" = 'IN';
-  `;
-  return Number(result[0]?.count ?? 0);
+  return prisma.member.count({ where: { isInside: true } });
 }
 
-/**
- * Rolling 14-day average visit duration (minutes) across all completed sessions.
- * Shown next to the counter so members can plan when to come.
- */
+/** Rolling 14-day average visit duration in minutes. */
 export async function getAverageVisitMinutes(): Promise<number> {
   const rows: Array<{ avg: number | null }> = await prisma.$queryRaw`
     SELECT AVG("durationMinutes")::float AS avg
     FROM "GymSession"
     WHERE "enteredAt" >= NOW() - INTERVAL '14 days';
   `;
-  return Math.round(rows[0]?.avg ?? 65); // 65 min sensible default before we have data
+  return Math.round(rows[0]?.avg ?? 65);
 }
 
 export type CrowdLevel = "quiet" | "moderate" | "busy" | "packed";
@@ -51,7 +34,7 @@ export function getCrowdLevel(occupancy: number, capacity: number): {
     return {
       level: "quiet",
       label: "Great time to go",
-      message: "It's quiet — you'll have your pick of equipment.",
+      message: "It's quiet - you'll have your pick of equipment.",
       color: "#22c55e",
       face: "😀",
     };
@@ -82,10 +65,6 @@ export function getCrowdLevel(occupancy: number, capacity: number): {
 
 export const GYM_CAPACITY = Number(process.env.GYM_MAX_CAPACITY ?? 450);
 
-/**
- * Compose the full live-counter payload used by the homepage server component
- * and the /api/occupancy endpoint.
- */
 export async function computeOccupancy() {
   const [occupancy, avgVisitMinutes] = await Promise.all([
     getCurrentOccupancy(),
